@@ -8,6 +8,9 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import org.json.JSONArray
+import org.json.JSONObject
+import pl.pilottv.remote.AppShortcut
 import pl.pilottv.remote.Target
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -65,6 +68,7 @@ class SettingsStore(private val context: Context) {
         val ATV_IP = stringPreferencesKey("atv_ip")
         val ATV_NAME = stringPreferencesKey("atv_name")
         val ATV_CERT_PIN = stringPreferencesKey("atv_cert_pin")
+        val SHORTCUTS = stringPreferencesKey("shortcuts")
     }
 
     val tvConfig: Flow<TvConfig?> = context.dataStore.data.map { p ->
@@ -114,6 +118,32 @@ class SettingsStore(private val context: Context) {
             listOf(Keys.ATV_IP, Keys.ATV_NAME, Keys.ATV_CERT_PIN).forEach { p.remove(it) }
         }
     }
+
+    /** Skróty aplikacji. Brak zapisu = lista domyślna. */
+    val shortcuts: Flow<List<AppShortcut>> = context.dataStore.data.map { p ->
+        p[Keys.SHORTCUTS]?.let(::decodeShortcuts) ?: AppShortcut.DEFAULTS
+    }
+
+    suspend fun saveShortcuts(list: List<AppShortcut>?) {
+        context.dataStore.edit { p ->
+            if (list == null) {
+                p.remove(Keys.SHORTCUTS)
+            } else {
+                p[Keys.SHORTCUTS] = encodeShortcuts(list)
+            }
+        }
+    }
+
+    private fun encodeShortcuts(list: List<AppShortcut>): String =
+        JSONArray(list.map { JSONObject().put("name", it.name).put("app", it.app) }).toString()
+
+    private fun decodeShortcuts(json: String): List<AppShortcut>? = runCatching {
+        val array = JSONArray(json)
+        (0 until array.length()).map { i ->
+            val o = array.getJSONObject(i)
+            AppShortcut(o.getString("name"), o.getString("app"))
+        }
+    }.getOrNull()
 
     suspend fun setTarget(target: Target) {
         context.dataStore.edit { it[Keys.TARGET] = target.name }

@@ -1,6 +1,14 @@
 package pl.pilottv.ui
 
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.os.SystemClock
+import android.speech.RecognizerIntent
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -34,6 +42,7 @@ import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -42,6 +51,7 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TouchApp
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -76,6 +86,9 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pilottv.RemoteViewModel
 import pl.pilottv.data.LayoutMode
+import kotlinx.coroutines.delay
+import pl.pilottv.remote.AppShortcut
+import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
 import pl.pilottv.remote.Target
 import pl.pilottv.resolveTarget
@@ -100,12 +113,60 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
     val hapticLevel = prefs.haptics
     val haptic: () -> Unit = remember(haptics, hapticLevel) { { haptics.click(hapticLevel) } }
     val send: (Key) -> Unit = vm::send
+    val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
     var showMore by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
+    var keyboardText by remember { mutableStateOf(EditedText("", fromUser = false)) }
+    var lastUserEdit by remember { mutableStateOf(0L) }
 
-    // Gdy na TV otworzy się pole tekstowe, od razu pokazujemy klawiaturę w telefonie.
+    fun editText(value: String) {
+        keyboardText = EditedText(value, fromUser = true)
+        lastUserEdit = SystemClock.elapsedRealtime()
+    }
+
+    // Pole tekstowe na urządzeniu: otwarcie pokazuje klawiaturę w telefonie, zmiany aktualizują tekst.
     LaunchedEffect(vm) {
-        vm.keyboardOnTv.collect { open -> showKeyboard = open }
+        vm.ime.collect { event ->
+            when (event) {
+                is ImeEvent.Opened -> {
+                    showKeyboard = true
+                    event.text?.let { keyboardText = EditedText(it, fromUser = false) }
+                }
+                is ImeEvent.Updated -> {
+                    // Nie nadpisujemy tekstu, który użytkownik właśnie wpisuje.
+                    if (SystemClock.elapsedRealtime() - lastUserEdit > ECHO_GUARD_MS) {
+                        keyboardText = EditedText(event.text, fromUser = false)
+                    }
+                }
+                ImeEvent.Closed -> showKeyboard = false
+            }
+        }
+    }
+
+    // Zmiany od użytkownika idą na urządzenie z krótkim opóźnieniem (cały tekst, więc kasowanie też działa).
+    LaunchedEffect(keyboardText) {
+        if (keyboardText.fromUser) {
+            delay(SEND_DEBOUNCE_MS)
+            vm.sendText(keyboardText.value)
+        }
+    }
+
+    val speech = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val text = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
+        if (text != null) {
+            editText(text)
+            showKeyboard = true
+        }
+    }
+    val startSpeech: () -> Unit = {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
+            .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
+            .putExtra(RecognizerIntent.EXTRA_PROMPT, "Powiedz, co wpisać")
+        try {
+            speech.launch(intent)
+        } catch (e: ActivityNotFoundException) {
+            Toast.makeText(context, "Brak usługi rozpoznawania mowy w telefonie.", Toast.LENGTH_SHORT).show()
+        }
     }
 
     val actions = RemoteActions(
@@ -113,7 +174,10 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
         power = vm::power,
         openMore = { showMore = true },
         openKeyboard = { showKeyboard = true },
+        openMic = startSpeech,
         touchpad = prefs.touchpad,
+        shortcuts = if (target == Target.DECODER) shortcuts else emptyList(),
+        launch = vm::launchShortcut,
     )
 
     CompositionLocalProvider(LocalHaptic provides haptic) {
@@ -172,8 +236,11 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
                 sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
             ) {
                 KeyboardSheet(
-                    onSend = vm::sendText,
+                    text = keyboardText.value,
+                    onTextChange = ::editText,
+                    onMic = startSpeech,
                     onSubmit = {
+                        if (keyboardText.fromUser) vm.sendText(keyboardText.value)
                         vm.endInput()
                         showKeyboard = false
                     },
@@ -229,13 +296,39 @@ private fun TargetChip(label: String, state: TvState, selected: Boolean, onClick
     )
 }
 
+/** Tekst w polu klawiatury. [fromUser] = wpisany w telefonie (trzeba go wysłać), a nie odebrany z urządzenia. */
+private data class EditedText(val value: String, val fromUser: Boolean)
+
+private const val SEND_DEBOUNCE_MS = 250L
+private const val ECHO_GUARD_MS = 1_500L
+
 private class RemoteActions(
     val send: (Key) -> Unit,
     val power: () -> Unit,
     val openMore: () -> Unit,
     val openKeyboard: () -> Unit,
+    val openMic: () -> Unit,
     val touchpad: Boolean,
+    val shortcuts: List<AppShortcut>,
+    val launch: (AppShortcut) -> Unit,
 )
+
+/** Skróty do aplikacji VOD (tylko dekoder). Przewijane poziomo. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ShortcutRow(a: RemoteActions) {
+    if (a.shortcuts.isEmpty()) return
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        a.shortcuts.forEach { shortcut ->
+            AssistChip(onClick = { a.launch(shortcut) }, label = { Text(shortcut.name) })
+        }
+    }
+}
 
 /** Domyślny układ: wszystko na jednym ekranie, bez przewijania. */
 @Composable
@@ -256,10 +349,11 @@ private fun ColumnScope.MinimalLayout(a: RemoteActions) {
         }
         NavKeys(a)
         RockerRow(a) {
-            TextKey("EXIT", { a.send(Key.EXIT) }, Modifier.width(96.dp))
             IconKey(Icons.Filled.Keyboard, "Wpisz tekst", a.openKeyboard, size = 52.dp)
+            IconKey(Icons.Filled.Mic, "Mikrofon", a.openMic, size = 52.dp)
             IconKey(Icons.Filled.MoreHoriz, "Więcej przycisków", a.openMore, size = 52.dp)
         }
+        ShortcutRow(a)
         MediaKeys(a)
     }
 }
@@ -280,8 +374,9 @@ private fun ColumnScope.FullLayout(a: RemoteActions) {
         RockerRow(a) {
             TextKey("CH LIST", { a.send(Key.CH_LIST) }, Modifier.width(96.dp), label = "Lista kanałów")
             IconKey(Icons.Filled.Keyboard, "Wpisz tekst", a.openKeyboard, size = 52.dp)
-            TextKey("EXIT", { a.send(Key.EXIT) }, Modifier.width(96.dp))
+            IconKey(Icons.Filled.Mic, "Mikrofon", a.openMic, size = 52.dp)
         }
+        ShortcutRow(a)
         if (a.touchpad) {
             TouchPad(a.send, Modifier.fillMaxWidth().height(260.dp))
         } else {
@@ -458,15 +553,25 @@ private fun FunctionKeys(send: (Key) -> Unit) {
             TextKey("INFO", { send(Key.INFO) }, Modifier.weight(1f))
             TextKey("GUIDE", { send(Key.GUIDE) }, Modifier.weight(1f), label = "Przewodnik")
             TextKey("TOOLS", { send(Key.TOOLS) }, Modifier.weight(1f), label = "Narzędzia")
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextKey("CH LIST", { send(Key.CH_LIST) }, Modifier.weight(1f), label = "Lista kanałów")
+            TextKey("EXIT", { send(Key.EXIT) }, Modifier.weight(1f))
         }
     }
 }
 
-/** Tekst z telefonu do pola tekstowego na TV (np. wyszukiwarka YouTube). */
+/**
+ * Edycja pola tekstowego na urządzeniu na żywo. [text] pokazuje zawartość pola z urządzenia,
+ * a każda zmiana w telefonie zastępuje cały tekst na urządzeniu.
+ */
 @Composable
-private fun KeyboardSheet(onSend: (String) -> Unit, onSubmit: () -> Unit) {
-    var text by rememberSaveable { mutableStateOf("") }
+private fun KeyboardSheet(
+    text: String,
+    onTextChange: (String) -> Unit,
+    onMic: () -> Unit,
+    onSubmit: () -> Unit,
+) {
     val clipboard = LocalClipboardManager.current
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
@@ -478,32 +583,29 @@ private fun KeyboardSheet(onSend: (String) -> Unit, onSubmit: () -> Unit) {
             .padding(bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Text("Tekst na TV", style = MaterialTheme.typography.titleMedium)
+        Text("Tekst na urządzeniu", style = MaterialTheme.typography.titleMedium)
         Text(
-            "Działa, gdy na TV jest otwarte pole tekstowe, np. wyszukiwarka.",
+            "Działa, gdy na urządzeniu jest otwarte pole tekstowe, np. wyszukiwarka. Zmiany idą na bieżąco.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         OutlinedTextField(
             value = text,
-            onValueChange = { text = it },
+            onValueChange = onTextChange,
             singleLine = true,
             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-            keyboardActions = KeyboardActions(onSend = {
-                onSend(text)
-                onSubmit()
-            }),
+            keyboardActions = KeyboardActions(onSend = { onSubmit() }),
+            trailingIcon = {
+                IconButton(onClick = onMic) { Icon(Icons.Filled.Mic, contentDescription = "Mikrofon") }
+            },
             modifier = Modifier
                 .fillMaxWidth()
                 .focusRequester(focus),
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { clipboard.getText()?.text?.let { text = it } }) { Text("Wklej") }
-            OutlinedButton(onClick = { onSend(text) }, enabled = text.isNotEmpty()) { Text("Wyślij") }
-            Button(onClick = {
-                if (text.isNotEmpty()) onSend(text)
-                onSubmit()
-            }) { Text("Zatwierdź") }
+            OutlinedButton(onClick = { clipboard.getText()?.text?.let(onTextChange) }) { Text("Wklej") }
+            OutlinedButton(onClick = { onTextChange("") }, enabled = text.isNotEmpty()) { Text("Wyczyść") }
+            Button(onClick = onSubmit) { Text("Zatwierdź") }
         }
     }
 }

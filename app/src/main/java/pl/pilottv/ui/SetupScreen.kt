@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -66,6 +67,9 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
     var ipInput by rememberSaveable(config?.ip) { mutableStateOf(config?.ip ?: "") }
     var macInput by rememberSaveable(config?.mac) { mutableStateOf(config?.mac ?: "") }
     var atvIpInput by rememberSaveable(atv?.ip) { mutableStateOf(atv?.ip ?: "") }
+    val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
+    var shortcutName by rememberSaveable { mutableStateOf("") }
+    var shortcutApp by rememberSaveable { mutableStateOf("") }
     val context = LocalContext.current
     val haptics = remember(context) { Haptics(context) }
 
@@ -197,6 +201,47 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
         ) { Text("Sparuj dekoder") }
         if (config != null && atv != null) {
             SwitchRow("Głośność zawsze steruje telewizorem", prefs.volumeToTv, vm::setVolumeToTv)
+        }
+        if (atv != null) {
+            Text("Skróty aplikacji na dekoderze", style = MaterialTheme.typography.bodyLarge)
+            shortcuts.forEach { shortcut ->
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(shortcut.name, style = MaterialTheme.typography.bodyMedium)
+                        Hint(shortcut.app)
+                    }
+                    IconButton(onClick = { vm.removeShortcut(shortcut) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Usuń ${shortcut.name}")
+                    }
+                }
+            }
+            Hint("Nowy skrót: nazwa pakietu z adresu aplikacji w Sklepie Play (…details?id=nazwa.pakietu). Możesz wkleić cały link.")
+            OutlinedTextField(
+                value = shortcutName,
+                onValueChange = { shortcutName = it },
+                label = { Text("Nazwa, np. Canal+") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedTextField(
+                value = shortcutApp,
+                onValueChange = { shortcutApp = it },
+                label = { Text("Pakiet albo link") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        vm.addShortcut(shortcutName, shortcutApp)
+                        shortcutName = ""
+                        shortcutApp = ""
+                    },
+                    enabled = shortcutName.isNotBlank() && shortcutApp.isNotBlank(),
+                ) { Text("Dodaj skrót") }
+                TextButton(onClick = vm::resetShortcuts) { Text("Przywróć domyślne") }
+            }
         }
 
         // --- Pilot ---

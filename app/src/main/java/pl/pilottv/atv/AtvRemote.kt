@@ -11,6 +11,7 @@ import pl.pilottv.data.AtvConfig
 import pl.pilottv.net.PinMismatchException
 import pl.pilottv.net.TofuTrustManager
 import pl.pilottv.net.hasCause
+import pl.pilottv.remote.ImeEvent
 import pl.pilottv.samsung.SessionEnd
 import pl.pilottv.samsung.SessionResult
 import pl.pilottv.samsung.TvState
@@ -35,8 +36,8 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
     private val _state = MutableStateFlow<TvState>(TvState.Idle)
     val state: StateFlow<TvState> = _state.asStateFlow()
 
-    private val _keyboardOnTv = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
-    val keyboardOnTv: SharedFlow<Boolean> = _keyboardOnTv.asSharedFlow()
+    private val _ime = MutableSharedFlow<ImeEvent>(extraBufferCapacity = 8)
+    val ime: SharedFlow<ImeEvent> = _ime.asSharedFlow()
 
     private val sessionIds = AtomicInteger()
 
@@ -142,11 +143,25 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
                 val value = msg.message(PING_REQUEST)?.int(1) ?: 0L
                 write(out, proto { message(PING_RESPONSE) { int(1, value) } })
             }
-            msg.has(IME_BATCH_EDIT) -> msg.message(IME_BATCH_EDIT)?.let {
-                imeCounter = it.int(1)?.toInt() ?: imeCounter
-                imeFieldCounter = it.int(2)?.toInt() ?: imeFieldCounter
+            msg.has(IME_BATCH_EDIT) -> {
+                val edit = msg.message(IME_BATCH_EDIT)
+                if (edit != null) {
+                    imeCounter = edit.int(1)?.toInt() ?: imeCounter
+                    imeFieldCounter = edit.int(2)?.toInt() ?: imeFieldCounter
+                    // edit_info(3) → text_field_status(2) → value(3)
+                    val text = runCatching { edit.message(3)?.message(2)?.string(3) }.getOrNull()
+                    if (text != null) _ime.tryEmit(ImeEvent.Updated(text))
+                }
             }
-            msg.has(IME_SHOW_REQUEST) -> _keyboardOnTv.tryEmit(true)
+            msg.has(IME_KEY_INJECT) -> {
+                // text_field_status(2) → value(2): zawartość pola po przejściu do niego.
+                val text = runCatching { msg.message(IME_KEY_INJECT)?.message(2)?.string(2) }.getOrNull()
+                if (text != null) _ime.tryEmit(ImeEvent.Updated(text))
+            }
+            msg.has(IME_SHOW_REQUEST) -> {
+                val text = runCatching { msg.message(IME_SHOW_REQUEST)?.message(2)?.string(2) }.getOrNull()
+                _ime.tryEmit(ImeEvent.Opened(text))
+            }
         }
         return false
     }
@@ -174,9 +189,8 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         return enqueue(proto { message(APP_LINK_LAUNCH) { string(1, link) } })
     }
 
-    /** Wpisuje tekst w pole tekstowe na dekoderze. */
+    /** Zastępuje tekst w polu tekstowym na dekoderze (pusty tekst czyści pole). */
     fun sendText(text: String): Boolean {
-        if (text.isEmpty()) return false
         return enqueue(proto {
             message(IME_BATCH_EDIT) {
                 int(1, imeCounter)
@@ -208,6 +222,7 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         const val PING_REQUEST = 8
         const val PING_RESPONSE = 9
         const val KEY_INJECT = 10
+        const val IME_KEY_INJECT = 20
         const val IME_BATCH_EDIT = 21
         const val IME_SHOW_REQUEST = 22
         const val APP_LINK_LAUNCH = 90

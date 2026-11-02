@@ -33,6 +33,8 @@ import pl.pilottv.data.ThemeMode
 import pl.pilottv.data.TvConfig
 import pl.pilottv.net.NetUtils
 import pl.pilottv.net.WakeOnLan
+import pl.pilottv.remote.AppShortcut
+import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
 import pl.pilottv.remote.Target
 import pl.pilottv.samsung.FoundTv
@@ -72,7 +74,10 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     val tvState: StateFlow<TvState> = samsung.state
     val atvState: StateFlow<TvState> = atv.state
-    val keyboardOnTv: Flow<Boolean> = merge(samsung.keyboardOnTv, atv.keyboardOnTv)
+    val ime: Flow<ImeEvent> = merge(samsung.ime, atv.ime)
+
+    val shortcuts: StateFlow<List<AppShortcut>> = settings.shortcuts
+        .stateIn(viewModelScope, SharingStarted.Eagerly, AppShortcut.DEFAULTS)
 
     val config: StateFlow<ConfigState> = combine(settings.tvConfig, settings.atvConfig) { tv, atvCfg ->
         ConfigState(loaded = true, tv = tv, atv = atvCfg)
@@ -196,12 +201,34 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settings.setTarget(target) }
     }
 
-    fun sendText(text: String) {
-        val sent = when (activeTarget()) {
-            Target.TV -> samsung.sendText(text)
-            Target.DECODER -> atv.sendText(text)
+    /** Zastępuje cały tekst w polu tekstowym na urządzeniu. */
+    fun sendText(text: String): Boolean = when (activeTarget()) {
+        Target.TV -> samsung.sendText(text)
+        Target.DECODER -> atv.sendText(text)
+    }
+
+    fun launchShortcut(shortcut: AppShortcut) {
+        if (activeTarget() != Target.DECODER) {
+            toast("Skróty aplikacji działają na dekoderze.")
+            return
         }
-        if (!sent) toast("Brak połączenia z urządzeniem.")
+        if (!atv.launchApp(shortcut.app)) toast("Dekoder nie odpowiada.")
+    }
+
+    fun addShortcut(name: String, app: String) {
+        val n = name.trim()
+        // Akceptujemy też cały link ze Sklepu Play: ...details?id=com.example.app
+        val a = app.trim().substringAfter("id=").substringBefore("&")
+        if (n.isEmpty() || a.isEmpty()) return
+        viewModelScope.launch { settings.saveShortcuts(shortcuts.value + AppShortcut(n, a)) }
+    }
+
+    fun removeShortcut(shortcut: AppShortcut) {
+        viewModelScope.launch { settings.saveShortcuts(shortcuts.value - shortcut) }
+    }
+
+    fun resetShortcuts() {
+        viewModelScope.launch { settings.saveShortcuts(null) }
     }
 
     fun endInput() {

@@ -19,6 +19,7 @@ import pl.pilottv.data.TvConfig
 import pl.pilottv.net.PinMismatchException
 import pl.pilottv.net.TofuTrustManager
 import pl.pilottv.net.hasCause
+import pl.pilottv.remote.ImeEvent
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -54,10 +55,10 @@ class SamsungRemote(clientName: String) {
     private val _state = MutableStateFlow<TvState>(TvState.Idle)
     val state: StateFlow<TvState> = _state.asStateFlow()
 
-    private val _keyboardOnTv = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
+    private val _ime = MutableSharedFlow<ImeEvent>(extraBufferCapacity = 8)
 
-    /** true, gdy TV otworzył klawiaturę ekranową (pole tekstowe), false, gdy ją zamknął. */
-    val keyboardOnTv: SharedFlow<Boolean> = _keyboardOnTv.asSharedFlow()
+    /** Pole tekstowe na TV: otwarcie, zmiana zawartości, zamknięcie. */
+    val ime: SharedFlow<ImeEvent> = _ime.asSharedFlow()
 
     private val sessionIds = AtomicInteger()
 
@@ -124,8 +125,12 @@ class SamsungRemote(clientName: String) {
                         if (activeId == id) socket = webSocket
                         update(TvState.Connected)
                     }
-                    "ms.remote.imeStart" -> if (activeId == id) _keyboardOnTv.tryEmit(true)
-                    "ms.remote.imeEnd" -> if (activeId == id) _keyboardOnTv.tryEmit(false)
+                    "ms.remote.imeStart" -> if (activeId == id) _ime.tryEmit(ImeEvent.Opened(imeText(json)))
+                    "ms.remote.imeUpdate" -> {
+                        val text = imeText(json)
+                        if (text != null && activeId == id) _ime.tryEmit(ImeEvent.Updated(text))
+                    }
+                    "ms.remote.imeEnd" -> if (activeId == id) _ime.tryEmit(ImeEvent.Closed)
                     "ms.channel.unauthorized" -> finish(webSocket, SessionEnd.DENIED)
                     "ms.channel.timeOut" -> finish(webSocket, SessionEnd.TIMEOUT)
                 }
@@ -171,7 +176,14 @@ class SamsungRemote(clientName: String) {
             .put("TypeOfRemote", "SendRemoteKey"),
     )
 
-    /** Wpisuje tekst w aktywne pole tekstowe na TV. Działa tylko, gdy TV pokazuje klawiaturę. */
+    /** Zawartość pola tekstowego z TV (Base64 w polu "data"). */
+    private fun imeText(json: JSONObject): String? {
+        val data = json.opt("data") as? String ?: return null
+        if (data.isEmpty()) return ""
+        return runCatching { String(Base64.decode(data, Base64.DEFAULT), Charsets.UTF_8) }.getOrNull()
+    }
+
+    /** Zastępuje tekst w aktywnym polu tekstowym na TV. Działa tylko, gdy TV pokazuje klawiaturę. */
     fun sendText(text: String): Boolean = sendControl(
         JSONObject()
             .put("Cmd", Base64.encodeToString(text.toByteArray(), Base64.NO_WRAP))
