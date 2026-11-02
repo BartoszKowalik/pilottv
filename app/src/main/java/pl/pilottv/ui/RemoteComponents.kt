@@ -41,6 +41,10 @@ import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.style.TextAlign
+import kotlin.math.abs
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.onClick
@@ -202,6 +206,65 @@ fun DPad(onKey: (String) -> Unit, modifier: Modifier = Modifier) {
         ) {
             Text("OK", fontWeight = FontWeight.Bold, fontSize = 22.sp)
         }
+    }
+}
+
+/**
+ * Touchpad zamiast krzyżaka. Przesunięcie palca o [stepDp] wysyła strzałkę w dominującym kierunku.
+ * Dalsze przesuwanie bez odrywania palca wysyła kolejne strzałki. Stuknięcie = OK.
+ */
+@Composable
+fun TouchPad(onKey: (String) -> Unit, modifier: Modifier = Modifier, stepDp: Dp = 48.dp) {
+    val currentOnKey by rememberUpdatedState(onKey)
+    val currentHaptic by rememberUpdatedState(LocalHaptic.current)
+    val stepPx = with(LocalDensity.current) { stepDp.toPx() }
+
+    Box(
+        modifier
+            .clip(RoundedCornerShape(28.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .semantics { contentDescription = "Touchpad. Przesuń, aby nawigować. Stuknij, aby zatwierdzić." }
+            .pointerInput(stepPx) {
+                awaitEachGesture {
+                    val down = awaitFirstDown()
+                    val slop = viewConfiguration.touchSlop
+                    var accX = 0f
+                    var accY = 0f
+                    var travelled = 0f
+                    while (true) {
+                        val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
+                        if (!change.pressed) break
+                        val delta = change.positionChange()
+                        change.consume()
+                        accX += delta.x
+                        accY += delta.y
+                        travelled += abs(delta.x) + abs(delta.y)
+                        if (abs(accX) >= stepPx || abs(accY) >= stepPx) {
+                            val key = if (abs(accX) > abs(accY)) {
+                                if (accX > 0) SamsungKeys.RIGHT else SamsungKeys.LEFT
+                            } else {
+                                if (accY > 0) SamsungKeys.DOWN else SamsungKeys.UP
+                            }
+                            currentHaptic()
+                            currentOnKey(key)
+                            accX = 0f
+                            accY = 0f
+                        }
+                    }
+                    if (travelled < slop) {
+                        currentHaptic()
+                        currentOnKey(SamsungKeys.ENTER)
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            "Przesuń palcem, aby nawigować\nStuknij = OK",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

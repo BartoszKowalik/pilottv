@@ -2,8 +2,11 @@ package pl.pilottv.samsung
 
 import android.util.Base64
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -46,6 +49,11 @@ class SamsungRemote(clientName: String) {
 
     private val _state = MutableStateFlow<TvState>(TvState.Idle)
     val state: StateFlow<TvState> = _state.asStateFlow()
+
+    private val _keyboardOnTv = MutableSharedFlow<Boolean>(extraBufferCapacity = 4)
+
+    /** true, gdy TV otworzył klawiaturę ekranową (pole tekstowe), false, gdy ją zamknął. */
+    val keyboardOnTv: SharedFlow<Boolean> = _keyboardOnTv.asSharedFlow()
 
     private val sessionIds = AtomicInteger()
 
@@ -112,6 +120,8 @@ class SamsungRemote(clientName: String) {
                         if (activeId == id) socket = webSocket
                         update(TvState.Connected)
                     }
+                    "ms.remote.imeStart" -> if (activeId == id) _keyboardOnTv.tryEmit(true)
+                    "ms.remote.imeEnd" -> if (activeId == id) _keyboardOnTv.tryEmit(false)
                     "ms.channel.unauthorized" -> finish(webSocket, SessionEnd.DENIED)
                     "ms.channel.timeOut" -> finish(webSocket, SessionEnd.TIMEOUT)
                 }
@@ -149,13 +159,27 @@ class SamsungRemote(clientName: String) {
         }
     }
 
-    fun sendKey(key: String): Boolean {
-        val ws = socket ?: return false
-        val params = JSONObject()
+    fun sendKey(key: String): Boolean = sendControl(
+        JSONObject()
             .put("Cmd", "Click")
             .put("DataOfCmd", key)
             .put("Option", "false")
-            .put("TypeOfRemote", "SendRemoteKey")
+            .put("TypeOfRemote", "SendRemoteKey"),
+    )
+
+    /** Wpisuje tekst w aktywne pole tekstowe na TV. Działa tylko, gdy TV pokazuje klawiaturę. */
+    fun sendText(text: String): Boolean = sendControl(
+        JSONObject()
+            .put("Cmd", Base64.encodeToString(text.toByteArray(), Base64.NO_WRAP))
+            .put("DataOfCmd", "base64")
+            .put("TypeOfRemote", "SendInputString"),
+    )
+
+    /** Zatwierdza tekst i zamyka klawiaturę na TV. */
+    fun endInput(): Boolean = sendControl(JSONObject().put("TypeOfRemote", "SendInputEnd"))
+
+    private fun sendControl(params: JSONObject): Boolean {
+        val ws = socket ?: return false
         val payload = JSONObject()
             .put("method", "ms.remote.control")
             .put("params", params)

@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pilottv.BuildConfig
 import pl.pilottv.RemoteViewModel
 import pl.pilottv.data.HapticLevel
+import pl.pilottv.data.LayoutMode
 import pl.pilottv.data.ThemeMode
 import pl.pilottv.data.TvConfig
 
@@ -180,6 +181,16 @@ fun SetupScreen(vm: RemoteViewModel, config: TvConfig?, onClose: (() -> Unit)?) 
                 haptics.click(level)
             },
         )
+        Text("Układ pilota", style = MaterialTheme.typography.bodyLarge)
+        ChoiceChips(
+            options = listOf(
+                LayoutMode.MINIMAL to "Minimalny",
+                LayoutMode.FULL to "Pełny",
+            ),
+            selected = prefs.layout,
+            onSelect = vm::setLayout,
+        )
+        SwitchRow("Touchpad zamiast krzyżaka", prefs.touchpad, vm::setTouchpad)
         Text("Motyw", style = MaterialTheme.typography.bodyLarge)
         ChoiceChips(
             options = listOf(

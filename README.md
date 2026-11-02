@@ -11,6 +11,9 @@ Plan rozwoju: [PLAN.md](PLAN.md).
 - Przytrzymanie VOL / CH / strzałek powtarza komendę.
 - Przyciski głośności telefonu sterują głośnością TV.
 - Włączanie TV przez Wake-on-LAN.
+- Wpisywanie tekstu z telefonu w pole tekstowe na TV (klawiatura otwiera się sama, gdy TV pokaże pole tekstowe).
+- Touchpad zamiast krzyżaka (przesunięcie = strzałka, stuknięcie = OK).
+- Układ minimalny albo pełny pilot. Motyw systemowy, jasny lub ciemny. Regulowana siła wibracji.
 
 ## Build
 APK buduje GitHub Actions ([.github/workflows/build.yml](.github/workflows/build.yml)):

@@ -42,6 +42,8 @@
 - Parowanie PIN, klawisze, tekst.
 - Tryb hybrydowy: VOL/Power → Samsung, D-pad/Home/Back → dekoder (konfigurowalne).
 - Sprawdzenie HDMI-CEC (Anynet+) jako prostszej alternatywy.
+- Skróty do VOD (Netflix, YouTube, Disney+, Max, Canal+ Online…): v2 `app_link_launch`, Samsung `ed.apps.launch`. Lista do edycji w ustawieniach.
+- Mikrofon: najpierw sprawdzić głos w protokole v2 (jak w aplikacji Google TV). Plan B: rozpoznawanie mowy w telefonie → tekst do wyszukiwarki na TV.
 
 ### Etap 4 – opcjonalnie
 - Lista aplikacji na TV i skróty do uruchamiania.

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -18,6 +19,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import pl.pilottv.data.AppPrefs
 import pl.pilottv.data.HapticLevel
+import pl.pilottv.data.LayoutMode
 import pl.pilottv.data.ThemeMode
 import pl.pilottv.data.SettingsStore
 import pl.pilottv.data.TvConfig
@@ -39,6 +41,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     private val remote = SamsungRemote(TV_CLIENT_NAME)
 
     val tvState: StateFlow<TvState> = remote.state
+    val keyboardOnTv: SharedFlow<Boolean> = remote.keyboardOnTv
 
     val config: StateFlow<ConfigState> = settings.tvConfig
         .map { ConfigState(loaded = true, config = it) }
@@ -96,6 +99,14 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun send(key: String) {
         remote.sendKey(key)
+    }
+
+    fun sendText(text: String) {
+        if (!remote.sendText(text)) toast("Brak połączenia z TV.")
+    }
+
+    fun endInput() {
+        remote.endInput()
     }
 
     /** Gdy TV jest połączony: KEY_POWER. Gdy nie: Wake-on-LAN i szybkie ponawianie połączenia. */
@@ -182,6 +193,14 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setTheme(mode: ThemeMode) {
         viewModelScope.launch { settings.setTheme(mode) }
+    }
+
+    fun setLayout(mode: LayoutMode) {
+        viewModelScope.launch { settings.setLayout(mode) }
+    }
+
+    fun setTouchpad(enabled: Boolean) {
+        viewModelScope.launch { settings.setTouchpad(enabled) }
     }
 
     fun setVolumeKeys(enabled: Boolean) {

@@ -24,10 +24,14 @@ enum class HapticLevel { OFF, LIGHT, MEDIUM, STRONG }
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
+enum class LayoutMode { MINIMAL, FULL }
+
 data class AppPrefs(
     val haptics: HapticLevel = HapticLevel.MEDIUM,
     val volumeKeys: Boolean = true,
     val theme: ThemeMode = ThemeMode.SYSTEM,
+    val layout: LayoutMode = LayoutMode.MINIMAL,
+    val touchpad: Boolean = false,
 )
 
 class SettingsStore(private val context: Context) {
@@ -43,6 +47,8 @@ class SettingsStore(private val context: Context) {
         val HAPTIC_LEVEL = stringPreferencesKey("haptic_level")
         val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
         val THEME = stringPreferencesKey("theme")
+        val LAYOUT = stringPreferencesKey("layout")
+        val TOUCHPAD = booleanPreferencesKey("touchpad")
     }
 
     val tvConfig: Flow<TvConfig?> = context.dataStore.data.map { p ->
@@ -63,6 +69,8 @@ class SettingsStore(private val context: Context) {
             haptics = p[Keys.HAPTIC_LEVEL].toEnum(legacyHaptics),
             volumeKeys = p[Keys.VOLUME_KEYS] ?: true,
             theme = p[Keys.THEME].toEnum(ThemeMode.SYSTEM),
+            layout = p[Keys.LAYOUT].toEnum(LayoutMode.MINIMAL),
+            touchpad = p[Keys.TOUCHPAD] ?: false,
         )
     }
 
@@ -110,6 +118,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setTheme(mode: ThemeMode) {
         context.dataStore.edit { it[Keys.THEME] = mode.name }
+    }
+
+    suspend fun setLayout(mode: LayoutMode) {
+        context.dataStore.edit { it[Keys.LAYOUT] = mode.name }
+    }
+
+    suspend fun setTouchpad(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.TOUCHPAD] = enabled }
     }
 
     suspend fun setVolumeKeys(enabled: Boolean) {
