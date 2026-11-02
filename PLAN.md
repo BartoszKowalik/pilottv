@@ -1,59 +1,56 @@
-# Pilot TV – plan
+# Pilot TV – założenia i stan projektu
 
 ## Cel
-- Natywna aplikacja Android (APK) bez reklam i bez trackerów.
-- Urządzenie główne: Samsung UE55NU7093U (Tizen 4.0, 2018).
-- Urządzenie drugie: dekoder Canal+ z Android TV.
-- Build tylko w GitHub Actions (na komputerze deweloperskim nie ma Android SDK ani JDK 17).
-- Projekt open source na GitHubie. Dystrybucja: GitHub Releases + Obtainium. Sklep Play / F-Droid później.
+- Natywna aplikacja Android (APK) do sterowania TV i dekoderem przez Wi-Fi. Bez reklam, bez trackerów.
+- Projekt open source (MIT): https://github.com/BartoszKowalik/pilottv
 
-## Decyzje
-| Obszar | Wybór |
-|---|---|
-| Język / UI | Kotlin + Jetpack Compose (Material 3) |
-| Samsung | OkHttp WebSocket `wss://IP:8002/api/v2/channels/samsung.remote.control`, token w DataStore |
-| TLS | TOFU – zapis certyfikatu TV przy parowaniu, potem tylko ten certyfikat (bez trust-all) |
-| Włączanie TV | Wake-on-LAN (UDP 9, MAC z `http://IP:8001/api/v2/`) |
-| Wykrywanie | SSDP + skan podsieci (port 8001) + ręczne IP |
-| Dekoder Canal+ | Android TV Remote v2 (TLS 6466/6467, protobuf), jeśli dekoder jest certyfikowanym Android TV |
-| Telefon | Brak IR – kanał IR odpada |
-| Wygląd | Domyślnie układ minimalny; pełny pilot jako opcja w ustawieniach |
+## Urządzenia
+| Urządzenie | Protokół | Status |
+|---|---|---|
+| Samsung UE55NU7093U (Tizen 4.0, 2018) | WebSocket `wss://IP:8002`, token, TOFU certyfikatu | Działa |
+| Dekoder Canal+ z Android TV | Android TV Remote v2: parowanie 6467 (kod z ekranu), sterowanie 6466 (TLS + cert. klienta, protobuf) | Działa |
+| LG webOS (TV kolegi) | SSAP przez WebSocket `wss://:3001` / `ws://:3000`, client-key | Eksperymentalne, nietestowane |
 
-## Etapy
-### Etap 1 – MVP Samsung
-1. Szkielet projektu, build APK (Gradle, CI na GitHub Actions).
-2. Wyszukanie TV w sieci i ręczne IP.
-3. Parowanie: okno „Zezwól” na TV, zapis tokenu i certyfikatu.
-4. Ekran minimalny: Power, Source, D-pad + OK, Back, Home, Menu, VOL±, CH±, Mute, media.
-5. Haptyka, auto-reconnect, status połączenia.
-6. Power przy wyłączonym TV: WoL + oczekiwanie na port 8002.
+- Telefon właściciela nie ma IR – kanał IR odpada.
+- TV Samsung ma uszkodzony port LAN, działa tylko po Wi-Fi (Wake-on-LAN przez Wi-Fi – do sprawdzenia).
+- Kolega z LG ma iPhone'a: APK nie zadziała. Rekomendacja: oficjalna aplikacja LG ThinQ. Wersja iOS tylko z Apple Developer Program (99 USD/rok, TestFlight) – decyzja odłożona.
 
-### Etap 2 – wygoda
-- Fizyczne przyciski głośności telefonu sterują TV.
-- Touchpad (gesty) zamiast strzałek – opcja.
-- Zwijane panele: cyfry, A/B/C/D, TTX, PRE-CH, Guide, Tools, Info.
-- Układ „pełny pilot” jako przełącznik w ustawieniach.
-- Wpisywanie tekstu i wklejanie ze schowka (`SendInputString`).
-- Kafelek w szybkich ustawieniach, widget.
-- Przytrzymanie = powtarzanie.
+## Decyzje techniczne
+- Kotlin + Jetpack Compose (Material 3), minSdk 26, OkHttp, DataStore.
+- **Build tylko w GitHub Actions.** Na komputerze deweloperskim nie instalujemy Android SDK ani JDK 17. Brak Gradle Wrappera – wersja Gradle jest w workflow.
+- Push na `main` → APK w Artifacts. Tag `v*` → GitHub Release z APK. Podpis stałym kluczem z sekretów repo (`KEYSTORE_BASE64`, `SIGNING_*`).
+- Dystrybucja: GitHub Releases + Obtainium. Sklep Play / F-Droid – później, opcjonalnie.
+- Bez zewnętrznych bibliotek do protobuf i certyfikatów: ręczny protobuf (`atv/Proto.kt`) i ręczny DER X.509 (`atv/ClientIdentity.kt`).
+- TLS do urządzeń: TOFU (zapamiętanie SHA-256 certyfikatu), bez trust-all.
+- Neutralne klawisze `remote/Key` mapowane na kody każdego urządzenia (`SamsungKeys`, `AtvKeys`, `LgKeys`).
+- Slot „TV” = Samsung albo LG (`TvBrand`, wspólny interfejs `TvClient`). Slot „Dekoder” = Android TV.
+- Głośność domyślnie zawsze do TV, także gdy wybrany jest dekoder (przełączane w ustawieniach).
+- Identyfikator aplikacji `pl.pilottv` i nazwa „Pilot TV” – nie zmieniać (zmiana psuje aktualizacje / parowanie).
+- Commity w repo z adresem `BartoszKowalik@users.noreply.github.com` (ustawione lokalnie dla repo).
 
-### Etap 3 – dekoder Canal+
-- Weryfikacja: czy aplikacja Google TV (pilot) na telefonie steruje dekoderem. Jeśli tak – protokół v2 zadziała.
-- Parowanie PIN, klawisze, tekst.
-- Tryb hybrydowy: VOL/Power → Samsung, D-pad/Home/Back → dekoder (konfigurowalne).
-- Sprawdzenie HDMI-CEC (Anynet+) jako prostszej alternatywy.
-- Skróty do VOD (Netflix, YouTube, Disney+, Max, Canal+ Online…): v2 `app_link_launch`, Samsung `ed.apps.launch`. Lista do edycji w ustawieniach.
-- Mikrofon: najpierw sprawdzić głos w protokole v2 (jak w aplikacji Google TV). Plan B: rozpoznawanie mowy w telefonie → tekst do wyszukiwarki na TV.
+## Zrobione (do v0.4.0)
+- Samsung: wyszukiwanie, parowanie, wszystkie przyciski, Wake-on-LAN, tekst.
+- Dekoder Android TV: parowanie kodem, przyciski, tekst na żywo, skróty VOD (edytowalna lista).
+- LG webOS: parowanie, przyciski (gniazdo pointer), tekst (IME), MAC do Wake-on-LAN.
+- UI: układ minimalny / pełny, touchpad, motyw systemowy/jasny/ciemny, siła wibracji, przyciski głośności telefonu, przełącznik TV/dekoder.
+- Pole tekstowe na żywo (tekst z urządzenia widoczny w telefonie, kasowanie). Ważne głównie na Androidzie TV, na Samsungu priorytet niski.
+- Mikrofon: rozpoznawanie mowy w telefonie → tekst do pola na urządzeniu.
 
-### Etap 4 – opcjonalnie
-- Lista aplikacji na TV i skróty do uruchamiania.
+## Do zrobienia / do sprawdzenia
+1. Kafelek w szybkich ustawieniach i widget (Power, Mute).
+2. Testy v0.4.0 na dekoderze: odczyt tekstu z pola, kasowanie, skróty VOD.
+3. Mikrofon przez protokół v2 (prawdziwy głos jak w Google TV): sprawdzić, czy słuchanie w v0.3 pochodziło z aplikacji Google TV w telefonie. Jeśli tak – dekoder obsługuje głos z telefonu, warto to dodać (wymaga uprawnienia RECORD_AUDIO).
+4. Wake-on-LAN Samsunga przez Wi-Fi – potwierdzić w praktyce.
+5. LG: potwierdzić parowanie bez podpisanego manifestu; zweryfikować nazwy przycisków PRE-CH, TTX, TOOLS, Źródło.
+6. Skrót Canal+ – nazwa pakietu nieznana, użytkownik może dodać z linku Google Play.
+7. Opcjonalnie: wersja iOS (tylko LG / całość), publikacja w Sklepie Play.
 
-## Przygotowanie TV
-- Ogólne → Menedżer urządzeń zewnętrznych → Menedżer połączeń urządzeń → Powiadomienie o dostępie: „Tylko pierwsze połączenie”; wyczyścić listę blokad.
-- Ogólne → Sieć → Ustawienia eksperckie → Włącz za pomocą urządzenia mobilnego.
-- Rezerwacja DHCP (stałe IP) dla TV w routerze.
-
-## Sklep Play – uwagi na później
+## Uwagi do Sklepu Play (na później)
 - Konto 25 USD, weryfikacja tożsamości, test zamknięty 12 testerów / 14 dni dla nowych kont prywatnych.
-- Brak „Samsung” w nazwie i ikonie. Prosta polityka prywatności.
+- Brak „Samsung”/„LG” w nazwie i ikonie. Prosta polityka prywatności.
 - Do sprawdzenia: aktualny zakres weryfikacji deweloperów Google dla aplikacji spoza sklepu.
+
+## Przygotowanie TV Samsung
+- Ogólne → Menedżer urządzeń zewnętrznych → Menedżer połączeń urządzeń → Powiadomienie o dostępie: „Tylko pierwsze połączenie”.
+- Ogólne → Sieć → Ustawienia eksperckie → Włącz za pomocą urządzenia mobilnego.
+- Rezerwacja DHCP (stałe IP) dla TV i dekodera w routerze.
