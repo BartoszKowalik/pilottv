@@ -1,4 +1,4 @@
-package pl.pilottv.samsung
+package pl.pilottv.net
 
 import android.util.Base64
 import java.security.MessageDigest
@@ -6,7 +6,10 @@ import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
 import javax.net.ssl.X509TrustManager
 
-class PinMismatchException : CertificateException("Certyfikat TV się zmienił")
+class PinMismatchException : CertificateException("Certyfikat urządzenia się zmienił")
+
+inline fun <reified T : Throwable> Throwable.hasCause(): Boolean =
+    generateSequence(this) { it.cause }.any { it is T }
 
 /**
  * Trust on first use. TV ma certyfikat self-signed, więc nie da się go zweryfikować przez CA.

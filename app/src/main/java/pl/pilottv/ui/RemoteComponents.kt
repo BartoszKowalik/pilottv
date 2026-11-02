@@ -57,7 +57,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import pl.pilottv.samsung.SamsungKeys
+import pl.pilottv.remote.Key
 
 /** Wibracja przy naciśnięciu. Dostarczana przez ekran, bo zależy od ustawień. */
 val LocalHaptic = staticCompositionLocalOf<() -> Unit> { {} }
@@ -175,7 +175,7 @@ fun TextKey(
 
 /** Okrągły krzyżak z przyciskiem OK. Rozmiar ustala wywołujący, krzyżak jest kwadratowy. */
 @Composable
-fun DPad(onKey: (String) -> Unit, modifier: Modifier = Modifier) {
+fun DPad(onKey: (Key) -> Unit, modifier: Modifier = Modifier) {
     val arrow = Modifier.fillMaxSize(1f / 3f)
     val iconSize = 44.dp
     Box(
@@ -184,20 +184,20 @@ fun DPad(onKey: (String) -> Unit, modifier: Modifier = Modifier) {
             .clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
     ) {
-        RemoteButton({ onKey(SamsungKeys.UP) }, "W górę", Modifier.align(Alignment.TopCenter).then(arrow), color = Color.Transparent, repeat = true) {
+        RemoteButton({ onKey(Key.UP) }, "W górę", Modifier.align(Alignment.TopCenter).then(arrow), color = Color.Transparent, repeat = true) {
             Icon(Icons.Filled.KeyboardArrowUp, null, Modifier.size(iconSize))
         }
-        RemoteButton({ onKey(SamsungKeys.DOWN) }, "W dół", Modifier.align(Alignment.BottomCenter).then(arrow), color = Color.Transparent, repeat = true) {
+        RemoteButton({ onKey(Key.DOWN) }, "W dół", Modifier.align(Alignment.BottomCenter).then(arrow), color = Color.Transparent, repeat = true) {
             Icon(Icons.Filled.KeyboardArrowDown, null, Modifier.size(iconSize))
         }
-        RemoteButton({ onKey(SamsungKeys.LEFT) }, "W lewo", Modifier.align(Alignment.CenterStart).then(arrow), color = Color.Transparent, repeat = true) {
+        RemoteButton({ onKey(Key.LEFT) }, "W lewo", Modifier.align(Alignment.CenterStart).then(arrow), color = Color.Transparent, repeat = true) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowLeft, null, Modifier.size(iconSize))
         }
-        RemoteButton({ onKey(SamsungKeys.RIGHT) }, "W prawo", Modifier.align(Alignment.CenterEnd).then(arrow), color = Color.Transparent, repeat = true) {
+        RemoteButton({ onKey(Key.RIGHT) }, "W prawo", Modifier.align(Alignment.CenterEnd).then(arrow), color = Color.Transparent, repeat = true) {
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(iconSize))
         }
         RemoteButton(
-            onPress = { onKey(SamsungKeys.ENTER) },
+            onPress = { onKey(Key.ENTER) },
             label = "OK",
             modifier = Modifier.align(Alignment.Center).fillMaxSize(0.36f),
             shape = CircleShape,
@@ -214,7 +214,7 @@ fun DPad(onKey: (String) -> Unit, modifier: Modifier = Modifier) {
  * Dalsze przesuwanie bez odrywania palca wysyła kolejne strzałki. Stuknięcie = OK.
  */
 @Composable
-fun TouchPad(onKey: (String) -> Unit, modifier: Modifier = Modifier, stepDp: Dp = 48.dp) {
+fun TouchPad(onKey: (Key) -> Unit, modifier: Modifier = Modifier, stepDp: Dp = 48.dp) {
     val currentOnKey by rememberUpdatedState(onKey)
     val currentHaptic by rememberUpdatedState(LocalHaptic.current)
     val stepPx = with(LocalDensity.current) { stepDp.toPx() }
@@ -241,9 +241,9 @@ fun TouchPad(onKey: (String) -> Unit, modifier: Modifier = Modifier, stepDp: Dp 
                         travelled += abs(delta.x) + abs(delta.y)
                         if (abs(accX) >= stepPx || abs(accY) >= stepPx) {
                             val key = if (abs(accX) > abs(accY)) {
-                                if (accX > 0) SamsungKeys.RIGHT else SamsungKeys.LEFT
+                                if (accX > 0) Key.RIGHT else Key.LEFT
                             } else {
-                                if (accY > 0) SamsungKeys.DOWN else SamsungKeys.UP
+                                if (accY > 0) Key.DOWN else Key.UP
                             }
                             currentHaptic()
                             currentOnKey(key)
@@ -253,7 +253,7 @@ fun TouchPad(onKey: (String) -> Unit, modifier: Modifier = Modifier, stepDp: Dp 
                     }
                     if (travelled < slop) {
                         currentHaptic()
-                        currentOnKey(SamsungKeys.ENTER)
+                        currentOnKey(Key.ENTER)
                     }
                 }
             },

@@ -44,6 +44,7 @@ import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -75,21 +76,30 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pilottv.RemoteViewModel
 import pl.pilottv.data.LayoutMode
-import pl.pilottv.data.TvConfig
-import pl.pilottv.samsung.SamsungKeys
+import pl.pilottv.remote.Key
+import pl.pilottv.remote.Target
+import pl.pilottv.resolveTarget
 import pl.pilottv.samsung.SessionEnd
 import pl.pilottv.samsung.TvState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RemoteScreen(vm: RemoteViewModel, config: TvConfig, onOpenSettings: () -> Unit) {
-    val state by vm.tvState.collectAsStateWithLifecycle()
+fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
+    val tvState by vm.tvState.collectAsStateWithLifecycle()
+    val atvState by vm.atvState.collectAsStateWithLifecycle()
     val prefs by vm.prefs.collectAsStateWithLifecycle()
+    val config by vm.config.collectAsStateWithLifecycle()
+    val target = resolveTarget(prefs.target, config)
+    val state = if (target == Target.DECODER) atvState else tvState
+    val title = when (target) {
+        Target.TV -> config.tv?.let { it.name ?: it.ip } ?: "Telewizor"
+        Target.DECODER -> config.atv?.let { it.name ?: it.ip } ?: "Dekoder"
+    }
     val context = LocalContext.current
     val haptics = remember(context) { Haptics(context) }
     val hapticLevel = prefs.haptics
     val haptic: () -> Unit = remember(haptics, hapticLevel) { { haptics.click(hapticLevel) } }
-    val send: (String) -> Unit = vm::send
+    val send: (Key) -> Unit = vm::send
     var showMore by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
 
@@ -114,14 +124,23 @@ fun RemoteScreen(vm: RemoteViewModel, config: TvConfig, onOpenSettings: () -> Un
                 .padding(horizontal = 20.dp, vertical = 8.dp),
         ) {
             Header(
-                title = config.name ?: config.ip,
+                title = title,
                 state = state,
                 touchpad = prefs.touchpad,
                 onToggleTouchpad = { vm.setTouchpad(!prefs.touchpad) },
                 onOpenSettings = onOpenSettings,
                 onRetry = vm::restartConnection,
-                onRepair = vm::resetPairing,
+                onRepair = if (target == Target.TV) vm::resetPairing else onOpenSettings,
             )
+            if (config.tv != null && config.atv != null) {
+                TargetSwitch(
+                    target = target,
+                    tvState = tvState,
+                    atvState = atvState,
+                    volumeToTv = prefs.volumeToTv,
+                    onSelect = vm::setTarget,
+                )
+            }
             Spacer(Modifier.height(12.dp))
             when (prefs.layout) {
                 LayoutMode.MINIMAL -> MinimalLayout(actions)
@@ -164,8 +183,54 @@ fun RemoteScreen(vm: RemoteViewModel, config: TvConfig, onOpenSettings: () -> Un
     }
 }
 
+/** Przełącznik TV / dekoder, widoczny tylko, gdy oba urządzenia są skonfigurowane. */
+@Composable
+private fun TargetSwitch(
+    target: Target,
+    tvState: TvState,
+    atvState: TvState,
+    volumeToTv: Boolean,
+    onSelect: (Target) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        TargetChip("TV", tvState, target == Target.TV) { onSelect(Target.TV) }
+        TargetChip("Dekoder", atvState, target == Target.DECODER) { onSelect(Target.DECODER) }
+        if (target == Target.DECODER && volumeToTv) {
+            Text(
+                "Głośność: TV",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun TargetChip(label: String, state: TvState, selected: Boolean, onClick: () -> Unit) {
+    FilterChip(
+        selected = selected,
+        onClick = onClick,
+        label = { Text(label) },
+        leadingIcon = {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(statusColor(state)),
+            )
+        },
+    )
+}
+
 private class RemoteActions(
-    val send: (String) -> Unit,
+    val send: (Key) -> Unit,
     val power: () -> Unit,
     val openMore: () -> Unit,
     val openKeyboard: () -> Unit,
@@ -191,7 +256,7 @@ private fun ColumnScope.MinimalLayout(a: RemoteActions) {
         }
         NavKeys(a)
         RockerRow(a) {
-            TextKey("EXIT", { a.send(SamsungKeys.EXIT) }, Modifier.width(96.dp))
+            TextKey("EXIT", { a.send(Key.EXIT) }, Modifier.width(96.dp))
             IconKey(Icons.Filled.Keyboard, "Wpisz tekst", a.openKeyboard, size = 52.dp)
             IconKey(Icons.Filled.MoreHoriz, "Więcej przycisków", a.openMore, size = 52.dp)
         }
@@ -213,9 +278,9 @@ private fun ColumnScope.FullLayout(a: RemoteActions) {
         TopKeys(a)
         DigitKeys(a.send)
         RockerRow(a) {
-            TextKey("CH LIST", { a.send(SamsungKeys.CH_LIST) }, Modifier.width(96.dp), label = "Lista kanałów")
+            TextKey("CH LIST", { a.send(Key.CH_LIST) }, Modifier.width(96.dp), label = "Lista kanałów")
             IconKey(Icons.Filled.Keyboard, "Wpisz tekst", a.openKeyboard, size = 52.dp)
-            TextKey("EXIT", { a.send(SamsungKeys.EXIT) }, Modifier.width(96.dp))
+            TextKey("EXIT", { a.send(Key.EXIT) }, Modifier.width(96.dp))
         }
         if (a.touchpad) {
             TouchPad(a.send, Modifier.fillMaxWidth().height(260.dp))
@@ -236,17 +301,17 @@ private fun TopKeys(a: RemoteActions) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconKey(Icons.Filled.PowerSettingsNew, "Zasilanie", a.power, color = PowerRed, contentColor = Color.White)
-        IconKey(Icons.Filled.Input, "Źródło", { a.send(SamsungKeys.SOURCE) })
-        IconKey(Icons.AutoMirrored.Filled.VolumeOff, "Wycisz", { a.send(SamsungKeys.MUTE) })
+        IconKey(Icons.Filled.Input, "Źródło", { a.send(Key.SOURCE) })
+        IconKey(Icons.AutoMirrored.Filled.VolumeOff, "Wycisz", { a.send(Key.MUTE) })
     }
 }
 
 @Composable
 private fun NavKeys(a: RemoteActions) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-        IconKey(Icons.AutoMirrored.Filled.ArrowBack, "Wstecz", { a.send(SamsungKeys.RETURN) })
-        IconKey(Icons.Filled.Home, "Home", { a.send(SamsungKeys.HOME) })
-        IconKey(Icons.Filled.Menu, "Menu", { a.send(SamsungKeys.MENU) })
+        IconKey(Icons.AutoMirrored.Filled.ArrowBack, "Wstecz", { a.send(Key.RETURN) })
+        IconKey(Icons.Filled.Home, "Home", { a.send(Key.HOME) })
+        IconKey(Icons.Filled.Menu, "Menu", { a.send(Key.MENU) })
     }
 }
 
@@ -259,8 +324,8 @@ private fun RockerRow(a: RemoteActions, center: @Composable () -> Unit) {
     ) {
         Rocker(
             title = "VOL",
-            upIcon = Icons.Filled.Add, upLabel = "Głośniej", onUp = { a.send(SamsungKeys.VOL_UP) },
-            downIcon = Icons.Filled.Remove, downLabel = "Ciszej", onDown = { a.send(SamsungKeys.VOL_DOWN) },
+            upIcon = Icons.Filled.Add, upLabel = "Głośniej", onUp = { a.send(Key.VOL_UP) },
+            downIcon = Icons.Filled.Remove, downLabel = "Ciszej", onDown = { a.send(Key.VOL_DOWN) },
         )
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -268,8 +333,8 @@ private fun RockerRow(a: RemoteActions, center: @Composable () -> Unit) {
         ) { center() }
         Rocker(
             title = "CH",
-            upIcon = Icons.Filled.KeyboardArrowUp, upLabel = "Następny kanał", onUp = { a.send(SamsungKeys.CH_UP) },
-            downIcon = Icons.Filled.KeyboardArrowDown, downLabel = "Poprzedni kanał", onDown = { a.send(SamsungKeys.CH_DOWN) },
+            upIcon = Icons.Filled.KeyboardArrowUp, upLabel = "Następny kanał", onUp = { a.send(Key.CH_UP) },
+            downIcon = Icons.Filled.KeyboardArrowDown, downLabel = "Poprzedni kanał", onDown = { a.send(Key.CH_DOWN) },
         )
     }
 }
@@ -277,11 +342,11 @@ private fun RockerRow(a: RemoteActions, center: @Composable () -> Unit) {
 @Composable
 private fun MediaKeys(a: RemoteActions) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        IconKey(Icons.Filled.FastRewind, "Przewiń do tyłu", { a.send(SamsungKeys.REWIND) }, size = 52.dp)
-        IconKey(Icons.Filled.PlayArrow, "Odtwórz", { a.send(SamsungKeys.PLAY) }, size = 52.dp)
-        IconKey(Icons.Filled.Pause, "Pauza", { a.send(SamsungKeys.PAUSE) }, size = 52.dp)
-        IconKey(Icons.Filled.Stop, "Stop", { a.send(SamsungKeys.STOP) }, size = 52.dp)
-        IconKey(Icons.Filled.FastForward, "Przewiń do przodu", { a.send(SamsungKeys.FAST_FORWARD) }, size = 52.dp)
+        IconKey(Icons.Filled.FastRewind, "Przewiń do tyłu", { a.send(Key.REWIND) }, size = 52.dp)
+        IconKey(Icons.Filled.PlayArrow, "Odtwórz", { a.send(Key.PLAY) }, size = 52.dp)
+        IconKey(Icons.Filled.Pause, "Pauza", { a.send(Key.PAUSE) }, size = 52.dp)
+        IconKey(Icons.Filled.Stop, "Stop", { a.send(Key.STOP) }, size = 52.dp)
+        IconKey(Icons.Filled.FastForward, "Przewiń do przodu", { a.send(Key.FAST_FORWARD) }, size = 52.dp)
     }
 }
 
@@ -332,6 +397,8 @@ private fun Header(
                 when {
                     state is TvState.Failed && state.reason == SessionEnd.CERT_CHANGED ->
                         TextButton(onClick = onRepair) { Text("Sparuj ponownie") }
+                    state is TvState.Failed && state.reason == SessionEnd.NOT_PAIRED ->
+                        TextButton(onClick = onRepair) { Text("Sparuj") }
                     state is TvState.Failed && state.reason == SessionEnd.DENIED ->
                         TextButton(onClick = onRetry) { Text("Ponów") }
                 }
@@ -353,44 +420,45 @@ private fun statusText(state: TvState): String = when (state) {
     TvState.Connected -> "Połączono"
     is TvState.Failed -> when (state.reason) {
         SessionEnd.CLOSED -> "Rozłączono. Łączę ponownie…"
-        SessionEnd.UNREACHABLE -> "TV nie odpowiada. Jeśli jest wyłączony, naciśnij zasilanie."
+        SessionEnd.UNREACHABLE -> "Urządzenie nie odpowiada. Jeśli jest wyłączone, naciśnij zasilanie."
         SessionEnd.TIMEOUT -> "Brak zgody na TV. Ponawiam…"
         SessionEnd.DENIED -> "TV odrzucił połączenie."
-        SessionEnd.CERT_CHANGED -> "Certyfikat TV się zmienił. Sparuj TV ponownie."
+        SessionEnd.CERT_CHANGED -> "Certyfikat urządzenia się zmienił. Sparuj je ponownie."
+        SessionEnd.NOT_PAIRED -> "Dekoder nie rozpoznaje telefonu. Sparuj go ponownie w ustawieniach."
     }
 }
 
 @Composable
-private fun DigitKeys(send: (String) -> Unit) {
+private fun DigitKeys(send: (Key) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val digitRows = listOf(listOf("1", "2", "3"), listOf("4", "5", "6"), listOf("7", "8", "9"))
         digitRows.forEach { row ->
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                row.forEach { d -> TextKey(d, { send(SamsungKeys.digit(d.toInt())) }, Modifier.weight(1f)) }
+                row.forEach { d -> TextKey(d, { send(Key.digit(d.toInt())) }, Modifier.weight(1f)) }
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextKey("TTX", { send(SamsungKeys.TTX) }, Modifier.weight(1f), label = "Teletekst")
-            TextKey("0", { send(SamsungKeys.digit(0)) }, Modifier.weight(1f))
-            TextKey("PRE-CH", { send(SamsungKeys.PRE_CH) }, Modifier.weight(1f), label = "Poprzedni kanał")
+            TextKey("TTX", { send(Key.TTX) }, Modifier.weight(1f), label = "Teletekst")
+            TextKey("0", { send(Key.digit(0)) }, Modifier.weight(1f))
+            TextKey("PRE-CH", { send(Key.PRE_CH) }, Modifier.weight(1f), label = "Poprzedni kanał")
         }
     }
 }
 
 @Composable
-private fun FunctionKeys(send: (String) -> Unit) {
+private fun FunctionKeys(send: (Key) -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextKey("A", { send(SamsungKeys.RED) }, Modifier.weight(1f), label = "Czerwony", color = Color(0xFFC62828), contentColor = Color.White)
-            TextKey("B", { send(SamsungKeys.GREEN) }, Modifier.weight(1f), label = "Zielony", color = Color(0xFF2E7D32), contentColor = Color.White)
-            TextKey("C", { send(SamsungKeys.YELLOW) }, Modifier.weight(1f), label = "Żółty", color = Color(0xFFF9A825), contentColor = Color.Black)
-            TextKey("D", { send(SamsungKeys.BLUE) }, Modifier.weight(1f), label = "Niebieski", color = Color(0xFF1565C0), contentColor = Color.White)
+            TextKey("A", { send(Key.RED) }, Modifier.weight(1f), label = "Czerwony", color = Color(0xFFC62828), contentColor = Color.White)
+            TextKey("B", { send(Key.GREEN) }, Modifier.weight(1f), label = "Zielony", color = Color(0xFF2E7D32), contentColor = Color.White)
+            TextKey("C", { send(Key.YELLOW) }, Modifier.weight(1f), label = "Żółty", color = Color(0xFFF9A825), contentColor = Color.Black)
+            TextKey("D", { send(Key.BLUE) }, Modifier.weight(1f), label = "Niebieski", color = Color(0xFF1565C0), contentColor = Color.White)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            TextKey("INFO", { send(SamsungKeys.INFO) }, Modifier.weight(1f))
-            TextKey("GUIDE", { send(SamsungKeys.GUIDE) }, Modifier.weight(1f), label = "Przewodnik")
-            TextKey("TOOLS", { send(SamsungKeys.TOOLS) }, Modifier.weight(1f), label = "Narzędzia")
-            TextKey("CH LIST", { send(SamsungKeys.CH_LIST) }, Modifier.weight(1f), label = "Lista kanałów")
+            TextKey("INFO", { send(Key.INFO) }, Modifier.weight(1f))
+            TextKey("GUIDE", { send(Key.GUIDE) }, Modifier.weight(1f), label = "Przewodnik")
+            TextKey("TOOLS", { send(Key.TOOLS) }, Modifier.weight(1f), label = "Narzędzia")
+            TextKey("CH LIST", { send(Key.CH_LIST) }, Modifier.weight(1f), label = "Lista kanałów")
         }
     }
 }

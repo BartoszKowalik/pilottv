@@ -16,6 +16,9 @@ import okhttp3.WebSocketListener
 import okio.ByteString
 import org.json.JSONObject
 import pl.pilottv.data.TvConfig
+import pl.pilottv.net.PinMismatchException
+import pl.pilottv.net.TofuTrustManager
+import pl.pilottv.net.hasCause
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -30,7 +33,8 @@ sealed interface TvState {
     data class Failed(val reason: SessionEnd) : TvState
 }
 
-enum class SessionEnd { CLOSED, UNREACHABLE, TIMEOUT, DENIED, CERT_CHANGED }
+/** Stan i wynik sesji są wspólne dla Samsunga i dekodera Android TV. */
+enum class SessionEnd { CLOSED, UNREACHABLE, TIMEOUT, DENIED, CERT_CHANGED, NOT_PAIRED }
 
 data class SessionResult(val end: SessionEnd, val wasConnected: Boolean)
 
@@ -186,6 +190,3 @@ class SamsungRemote(clientName: String) {
         return ws.send(payload.toString())
     }
 }
-
-private inline fun <reified T : Throwable> Throwable.hasCause(): Boolean =
-    generateSequence(this) { it.cause }.any { it is T }

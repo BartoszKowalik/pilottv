@@ -2,18 +2,11 @@ package pl.pilottv.samsung
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import pl.pilottv.net.NetUtils
-import java.net.InetSocketAddress
-import java.net.Socket
 import java.util.concurrent.TimeUnit
 
 data class FoundTv(val ip: String, val name: String, val model: String?, val mac: String?)
@@ -22,26 +15,13 @@ data class FoundTv(val ip: String, val name: String, val model: String?, val mac
 object SamsungDiscovery {
 
     private const val INFO_PORT = 8001
-    private const val PROBE_TIMEOUT_MS = 400
-    private const val PARALLEL_PROBES = 48
 
     private val client = OkHttpClient.Builder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(2, TimeUnit.SECONDS)
         .build()
 
-    suspend fun scan(context: Context): List<FoundTv> = coroutineScope {
-        val prefix = NetUtils.subnetPrefix(context) ?: return@coroutineScope emptyList()
-        val semaphore = Semaphore(PARALLEL_PROBES)
-        (1..254).map { host ->
-            async(Dispatchers.IO) {
-                semaphore.withPermit {
-                    val ip = "$prefix.$host"
-                    if (isPortOpen(ip)) fetchInfo(ip) else null
-                }
-            }
-        }.awaitAll().filterNotNull()
-    }
+    suspend fun scan(context: Context): List<FoundTv> = NetUtils.scanSubnet(context, INFO_PORT) { fetchInfo(it) }
 
     suspend fun fetchInfo(ip: String): FoundTv? = withContext(Dispatchers.IO) {
         runCatching {
@@ -59,9 +39,4 @@ object SamsungDiscovery {
             }
         }.getOrNull()
     }
-
-    private fun isPortOpen(ip: String): Boolean = runCatching {
-        Socket().use { it.connect(InetSocketAddress(ip, INFO_PORT), PROBE_TIMEOUT_MS) }
-        true
-    }.getOrDefault(false)
 }

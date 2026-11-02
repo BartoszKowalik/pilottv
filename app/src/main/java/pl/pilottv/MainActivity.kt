@@ -21,8 +21,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import pl.pilottv.samsung.SamsungKeys
-import pl.pilottv.samsung.TvState
+import pl.pilottv.remote.Key
 import pl.pilottv.ui.PilotTheme
 import pl.pilottv.ui.isDark
 import pl.pilottv.ui.RemoteScreen
@@ -62,12 +61,12 @@ class MainActivity : ComponentActivity() {
         super.onStop()
     }
 
-    /** Fizyczne przyciski głośności telefonu sterują głośnością TV, gdy TV jest połączony. */
+    /** Fizyczne przyciski głośności telefonu sterują głośnością urządzenia, gdy jest połączone. */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (vm.prefs.value.volumeKeys && vm.tvState.value == TvState.Connected) {
+        if (vm.canHandleVolumeKeys()) {
             val key = when (event.keyCode) {
-                KeyEvent.KEYCODE_VOLUME_UP -> SamsungKeys.VOL_UP
-                KeyEvent.KEYCODE_VOLUME_DOWN -> SamsungKeys.VOL_DOWN
+                KeyEvent.KEYCODE_VOLUME_UP -> Key.VOL_UP
+                KeyEvent.KEYCODE_VOLUME_DOWN -> Key.VOL_DOWN
                 else -> null
             }
             if (key != null) {
@@ -89,18 +88,17 @@ private fun PilotApp(vm: RemoteViewModel) {
         return
     }
 
-    val config = configState.config
-    // Po „Zapomnij TV” wybór nowego TV ma od razu wrócić do pilota.
-    LaunchedEffect(config == null) {
-        if (config == null) showSettings = false
+    val hasDevice = configState.hasAnyDevice
+    // Po „Zapomnij” ostatniego urządzenia wybór nowego ma od razu wrócić do pilota.
+    LaunchedEffect(hasDevice) {
+        if (!hasDevice) showSettings = false
     }
-    if (config == null || showSettings) {
+    if (!hasDevice || showSettings) {
         SetupScreen(
             vm = vm,
-            config = config,
-            onClose = if (config != null) ({ showSettings = false }) else null,
+            onClose = if (hasDevice) ({ showSettings = false }) else null,
         )
     } else {
-        RemoteScreen(vm, config, onOpenSettings = { showSettings = true })
+        RemoteScreen(vm, onOpenSettings = { showSettings = true })
     }
 }
