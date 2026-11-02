@@ -1,0 +1,38 @@
+package pl.pilottv.samsung
+
+/** Kody klawiszy Samsung Tizen (pole DataOfCmd). */
+object SamsungKeys {
+    const val POWER = "KEY_POWER"
+    const val SOURCE = "KEY_SOURCE"
+    const val UP = "KEY_UP"
+    const val DOWN = "KEY_DOWN"
+    const val LEFT = "KEY_LEFT"
+    const val RIGHT = "KEY_RIGHT"
+    const val ENTER = "KEY_ENTER"
+    const val RETURN = "KEY_RETURN"
+    const val HOME = "KEY_HOME"
+    const val MENU = "KEY_MENU"
+    const val EXIT = "KEY_EXIT"
+    const val VOL_UP = "KEY_VOLUP"
+    const val VOL_DOWN = "KEY_VOLDOWN"
+    const val MUTE = "KEY_MUTE"
+    const val CH_UP = "KEY_CHUP"
+    const val CH_DOWN = "KEY_CHDOWN"
+    const val CH_LIST = "KEY_CH_LIST"
+    const val PRE_CH = "KEY_PRECH"
+    const val TTX = "KEY_TTX_MIX"
+    const val GUIDE = "KEY_GUIDE"
+    const val INFO = "KEY_INFO"
+    const val TOOLS = "KEY_TOOLS"
+    const val RED = "KEY_RED"
+    const val GREEN = "KEY_GREEN"
+    const val YELLOW = "KEY_YELLOW"
+    const val BLUE = "KEY_CYAN"
+    const val PLAY = "KEY_PLAY"
+    const val PAUSE = "KEY_PAUSE"
+    const val STOP = "KEY_STOP"
+    const val REWIND = "KEY_REWIND"
+    const val FAST_FORWARD = "KEY_FF"
+
+    fun digit(n: Int) = "KEY_$n"
+}
