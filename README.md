@@ -1,6 +1,6 @@
 # Pilot TV
 
-Pilot do telewizorów Samsung Tizen (2016+) i dekoderów / przystawek Android TV przez Wi-Fi. Bez reklam, bez trackerów, bez dostępu do internetu poza siecią lokalną.
+Pilot do telewizorów Samsung Tizen (2016+), LG webOS i dekoderów / przystawek Android TV przez Wi-Fi. Bez reklam, bez trackerów, bez dostępu do internetu poza siecią lokalną.
 
 Plan rozwoju: [PLAN.md](PLAN.md).
 
@@ -14,6 +14,9 @@ Plan rozwoju: [PLAN.md](PLAN.md).
 - Wpisywanie tekstu z telefonu w pole tekstowe na TV (klawiatura otwiera się sama, gdy TV pokaże pole tekstowe).
 - Touchpad zamiast krzyżaka (przesunięcie = strzałka, stuknięcie = OK).
 - Android TV (protokół Remote v2, jak w aplikacji Google TV): parowanie kodem z ekranu, przyciski, tekst.
+- LG webOS (SSAP przez WebSocket, port 3001/3000): parowanie przez okno na TV, przyciski, tekst, Wake-on-LAN. Eksperymentalne.
+- Pole tekstowe na żywo: tekst z TV widoczny w telefonie, kasowanie działa. Mikrofon: rozpoznawanie mowy w telefonie.
+- Skróty do aplikacji VOD na dekoderze (lista do edycji).
 - Przełącznik TV / dekoder. Głośność może zawsze sterować telewizorem.
 - Układ minimalny albo pełny pilot. Motyw systemowy, jasny lub ciemny. Regulowana siła wibracji.
 

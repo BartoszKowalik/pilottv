@@ -20,6 +20,9 @@ import pl.pilottv.net.PinMismatchException
 import pl.pilottv.net.TofuTrustManager
 import pl.pilottv.net.hasCause
 import pl.pilottv.remote.ImeEvent
+import pl.pilottv.remote.Key
+import pl.pilottv.remote.TvClient
+import pl.pilottv.remote.TvUpdate
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -43,7 +46,7 @@ data class SessionResult(val end: SessionEnd, val wasConnected: Boolean)
  * Klient WebSocket dla Samsung Tizen (2016+), port 8002 (wss).
  * Jedna sesja = jedno połączenie. Ponowne łączenie robi wywołujący.
  */
-class SamsungRemote(clientName: String) {
+class SamsungRemote(clientName: String) : TvClient {
 
     private val nameParam = Base64.encodeToString(clientName.toByteArray(), Base64.NO_WRAP)
 
@@ -53,12 +56,12 @@ class SamsungRemote(clientName: String) {
         .build()
 
     private val _state = MutableStateFlow<TvState>(TvState.Idle)
-    val state: StateFlow<TvState> = _state.asStateFlow()
+    override val state: StateFlow<TvState> = _state.asStateFlow()
 
     private val _ime = MutableSharedFlow<ImeEvent>(extraBufferCapacity = 8)
 
     /** Pole tekstowe na TV: otwarcie, zmiana zawartości, zamknięcie. */
-    val ime: SharedFlow<ImeEvent> = _ime.asSharedFlow()
+    override val ime: SharedFlow<ImeEvent> = _ime.asSharedFlow()
 
     private val sessionIds = AtomicInteger()
 
@@ -69,7 +72,7 @@ class SamsungRemote(clientName: String) {
     private var socket: WebSocket? = null
 
     /** Unieważnia bieżącą sesję. Zdarzenia ze starego gniazda nie zmieniają już stanu. */
-    fun markIdle() {
+    override fun markIdle() {
         activeId = sessionIds.incrementAndGet()
         socket = null
         _state.value = TvState.Idle
@@ -77,9 +80,9 @@ class SamsungRemote(clientName: String) {
 
     /**
      * Otwiera połączenie i czeka, aż się zakończy. Anulowanie korutyny zamyka gniazdo.
-     * [onPaired] dostaje nowy token i skrót certyfikatu, gdy trzeba je zapisać.
+     * [onUpdate] dostaje nowy token i skrót certyfikatu, gdy trzeba je zapisać.
      */
-    suspend fun session(config: TvConfig, onPaired: (token: String?, certPin: String) -> Unit): SessionResult {
+    override suspend fun session(config: TvConfig, onUpdate: (TvUpdate) -> Unit): SessionResult {
         val id = sessionIds.incrementAndGet()
         activeId = id
         fun update(newState: TvState) {
@@ -120,7 +123,7 @@ class SamsungRemote(clientName: String) {
                         val pin = trustManager.seenPin
                         val tokenChanged = token != null && token != config.token
                         if (pin != null && (pin != config.certPin || tokenChanged)) {
-                            onPaired(token ?: config.token, pin)
+                            onUpdate(TvUpdate(token = token ?: config.token, certPin = pin))
                         }
                         if (activeId == id) socket = webSocket
                         update(TvState.Connected)
@@ -168,7 +171,9 @@ class SamsungRemote(clientName: String) {
         }
     }
 
-    fun sendKey(key: String): Boolean = sendControl(
+    override fun sendKey(key: Key): Boolean = sendRemoteKey(SamsungKeys.of(key))
+
+    private fun sendRemoteKey(key: String): Boolean = sendControl(
         JSONObject()
             .put("Cmd", "Click")
             .put("DataOfCmd", key)
@@ -184,7 +189,7 @@ class SamsungRemote(clientName: String) {
     }
 
     /** Zastępuje tekst w aktywnym polu tekstowym na TV. Działa tylko, gdy TV pokazuje klawiaturę. */
-    fun sendText(text: String): Boolean = sendControl(
+    override fun sendText(text: String): Boolean = sendControl(
         JSONObject()
             .put("Cmd", Base64.encodeToString(text.toByteArray(), Base64.NO_WRAP))
             .put("DataOfCmd", "base64")
@@ -192,7 +197,7 @@ class SamsungRemote(clientName: String) {
     )
 
     /** Zatwierdza tekst i zamyka klawiaturę na TV. */
-    fun endInput(): Boolean = sendControl(JSONObject().put("TypeOfRemote", "SendInputEnd"))
+    override fun endInput(): Boolean = sendControl(JSONObject().put("TypeOfRemote", "SendInputEnd"))
 
     private fun sendControl(params: JSONObject): Boolean {
         val ws = socket ?: return false

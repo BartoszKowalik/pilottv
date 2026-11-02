@@ -15,13 +15,19 @@ import pl.pilottv.remote.Target
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
 
-/** Zapisany telewizor. [token] i [certPin] pojawiają się po sparowaniu. */
+enum class TvBrand { SAMSUNG, LG }
+
+/**
+ * Zapisany telewizor. [token] i [certPin] pojawiają się po sparowaniu.
+ * [token]: Samsung – token z TV, LG – client-key.
+ */
 data class TvConfig(
     val ip: String,
     val name: String?,
     val mac: String?,
     val token: String?,
     val certPin: String?,
+    val brand: TvBrand = TvBrand.SAMSUNG,
 )
 
 /** Sparowany dekoder Android TV. [certPin] zapisujemy przy pierwszym połączeniu po parowaniu. */
@@ -56,6 +62,7 @@ class SettingsStore(private val context: Context) {
         val TV_MAC = stringPreferencesKey("tv_mac")
         val TV_TOKEN = stringPreferencesKey("tv_token")
         val TV_CERT_PIN = stringPreferencesKey("tv_cert_pin")
+        val TV_BRAND = stringPreferencesKey("tv_brand")
         /** Stary przełącznik wł./wył. z wersji 0.1.0. Czytany tylko, gdy brak [HAPTIC_LEVEL]. */
         val HAPTICS_LEGACY = booleanPreferencesKey("haptics")
         val HAPTIC_LEVEL = stringPreferencesKey("haptic_level")
@@ -79,6 +86,7 @@ class SettingsStore(private val context: Context) {
                 mac = p[Keys.TV_MAC],
                 token = p[Keys.TV_TOKEN],
                 certPin = p[Keys.TV_CERT_PIN],
+                brand = p[Keys.TV_BRAND].toEnum(TvBrand.SAMSUNG),
             )
         }
     }
@@ -154,14 +162,15 @@ class SettingsStore(private val context: Context) {
     }
 
     /** Zapisuje TV. Zmiana IP kasuje parowanie, bo to może być inne urządzenie. */
-    suspend fun saveTv(ip: String, name: String?, mac: String?) {
+    suspend fun saveTv(ip: String, name: String?, mac: String?, brand: TvBrand) {
         context.dataStore.edit { p ->
-            if (p[Keys.TV_IP] != ip) {
+            if (p[Keys.TV_IP] != ip || p[Keys.TV_BRAND].toEnum(TvBrand.SAMSUNG) != brand) {
                 p.remove(Keys.TV_TOKEN)
                 p.remove(Keys.TV_CERT_PIN)
                 p.remove(Keys.TV_MAC)
             }
             p[Keys.TV_IP] = ip
+            p[Keys.TV_BRAND] = brand.name
             p.setOrRemove(Keys.TV_NAME, name)
             if (mac != null) p[Keys.TV_MAC] = mac
         }
@@ -171,10 +180,12 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it.setOrRemove(Keys.TV_MAC, mac) }
     }
 
-    suspend fun savePairing(token: String?, certPin: String) {
+    /** Zapisuje tylko pola różne od null. */
+    suspend fun saveTvUpdate(token: String?, certPin: String?, mac: String?) {
         context.dataStore.edit { p ->
-            p.setOrRemove(Keys.TV_TOKEN, token)
-            p[Keys.TV_CERT_PIN] = certPin
+            if (token != null) p[Keys.TV_TOKEN] = token
+            if (certPin != null) p[Keys.TV_CERT_PIN] = certPin
+            if (mac != null) p[Keys.TV_MAC] = mac
         }
     }
 
@@ -187,7 +198,8 @@ class SettingsStore(private val context: Context) {
 
     suspend fun forgetTv() {
         context.dataStore.edit { p ->
-            listOf(Keys.TV_IP, Keys.TV_NAME, Keys.TV_MAC, Keys.TV_TOKEN, Keys.TV_CERT_PIN).forEach { p.remove(it) }
+            listOf(Keys.TV_IP, Keys.TV_NAME, Keys.TV_MAC, Keys.TV_TOKEN, Keys.TV_CERT_PIN, Keys.TV_BRAND)
+                .forEach { p.remove(it) }
         }
     }
 

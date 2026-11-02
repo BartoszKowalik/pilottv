@@ -50,6 +50,7 @@ import pl.pilottv.RemoteViewModel
 import pl.pilottv.data.HapticLevel
 import pl.pilottv.data.LayoutMode
 import pl.pilottv.data.ThemeMode
+import pl.pilottv.data.TvBrand
 
 /** Ustawienia i konfiguracja urządzeń. [onClose] = null, gdy nie ma jeszcze żadnego urządzenia. */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -67,6 +68,9 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
     var ipInput by rememberSaveable(config?.ip) { mutableStateOf(config?.ip ?: "") }
     var macInput by rememberSaveable(config?.mac) { mutableStateOf(config?.mac ?: "") }
     var atvIpInput by rememberSaveable(atv?.ip) { mutableStateOf(atv?.ip ?: "") }
+    var manualBrand by rememberSaveable(config?.brand) { mutableStateOf(config?.brand ?: TvBrand.SAMSUNG) }
+    val scanningLg by vm.scanningLg.collectAsStateWithLifecycle()
+    val foundLg by vm.foundLg.collectAsStateWithLifecycle()
     val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
     var shortcutName by rememberSaveable { mutableStateOf("") }
     var shortcutApp by rememberSaveable { mutableStateOf("") }
@@ -92,15 +96,18 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
             Text("Ustawienia", style = MaterialTheme.typography.headlineSmall)
         }
 
-        // --- Telewizor Samsung ---
-        SectionTitle("Telewizor Samsung")
+        // --- Telewizor Samsung / LG ---
+        SectionTitle("Telewizor (Samsung / LG)")
         if (config != null) {
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(config.name ?: "Samsung TV", style = MaterialTheme.typography.titleMedium)
-                    Text("IP: ${config.ip}", style = MaterialTheme.typography.bodyMedium)
+                    Text(config.name ?: "Telewizor", style = MaterialTheme.typography.titleMedium)
                     Text(
-                        if (config.certPin != null) "Sparowano" else "Nie sparowano",
+                        "${if (config.brand == TvBrand.LG) "LG webOS" else "Samsung"} · IP: ${config.ip}",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        if (config.token != null || config.certPin != null) "Sparowano" else "Nie sparowano",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.size(4.dp))
@@ -112,7 +119,24 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
             }
         }
         Hint("Telefon i urządzenia muszą być w tej samej sieci Wi-Fi.")
-        ScanButton(scanning, "Szukaj TV w sieci", vm::scan)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ScanButton(scanning, "Szukaj Samsunga", vm::scan)
+            ScanButton(scanningLg, "Szukaj LG", vm::scanLg)
+        }
+        foundLg.forEach { ip ->
+            Card(
+                onClick = {
+                    vm.selectLg(ip)
+                    onClose?.invoke()
+                },
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("LG webOS TV", style = MaterialTheme.typography.titleSmall)
+                    Text("$ip · stuknij, aby połączyć", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
         found.forEach { tv ->
             Card(
                 onClick = {
@@ -138,9 +162,14 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
             modifier = Modifier.fillMaxWidth(),
         )
+        ChoiceChips(
+            options = listOf(TvBrand.SAMSUNG to "Samsung", TvBrand.LG to "LG"),
+            selected = manualBrand,
+            onSelect = { manualBrand = it },
+        )
         Button(
             onClick = {
-                vm.selectManualIp(ipInput)
+                vm.selectManualIp(ipInput, manualBrand)
                 onClose?.invoke()
             },
             enabled = ipInput.isNotBlank(),
@@ -149,8 +178,13 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
         if (config != null) {
             Text("Włączanie TV (Wake-on-LAN)", style = MaterialTheme.typography.bodyLarge)
             Hint(
-                "Na TV włącz: Ustawienia → Ogólne → Sieć → Ustawienia eksperckie → " +
-                    "Włącz za pomocą urządzenia mobilnego. MAC zwykle uzupełnia się sam.",
+                if (config.brand == TvBrand.LG) {
+                    "Na TV LG włącz: Ustawienia → Ogólne → Urządzenia → Ustawienia TV → " +
+                        "Włącz przez Wi-Fi (nazwa zależy od wersji webOS). MAC uzupełni się po pierwszym połączeniu."
+                } else {
+                    "Na TV włącz: Ustawienia → Ogólne → Sieć → Ustawienia eksperckie → " +
+                        "Włącz za pomocą urządzenia mobilnego. MAC zwykle uzupełnia się sam."
+                },
             )
             OutlinedTextField(
                 value = macInput,

@@ -30,7 +30,10 @@ import pl.pilottv.data.HapticLevel
 import pl.pilottv.data.LayoutMode
 import pl.pilottv.data.SettingsStore
 import pl.pilottv.data.ThemeMode
+import pl.pilottv.data.TvBrand
 import pl.pilottv.data.TvConfig
+import pl.pilottv.lg.LgRemote
+import pl.pilottv.remote.TvClient
 import pl.pilottv.net.NetUtils
 import pl.pilottv.net.WakeOnLan
 import pl.pilottv.remote.AppShortcut
@@ -39,7 +42,6 @@ import pl.pilottv.remote.Key
 import pl.pilottv.remote.Target
 import pl.pilottv.samsung.FoundTv
 import pl.pilottv.samsung.SamsungDiscovery
-import pl.pilottv.samsung.SamsungKeys
 import pl.pilottv.samsung.SamsungRemote
 import pl.pilottv.samsung.SessionEnd
 import pl.pilottv.samsung.SessionResult
@@ -70,11 +72,11 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     private val settings = SettingsStore(app)
     private val identity by lazy { ClientIdentity.load(app) }
     private val samsung = SamsungRemote(CLIENT_NAME)
+    private val lg = LgRemote(CLIENT_NAME)
     private val atv = AtvRemote({ identity }, CLIENT_NAME)
 
-    val tvState: StateFlow<TvState> = samsung.state
     val atvState: StateFlow<TvState> = atv.state
-    val ime: Flow<ImeEvent> = merge(samsung.ime, atv.ime)
+    val ime: Flow<ImeEvent> = merge(samsung.ime, lg.ime, atv.ime)
 
     val shortcuts: StateFlow<List<AppShortcut>> = settings.shortcuts
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppShortcut.DEFAULTS)
@@ -85,6 +87,21 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     val prefs: StateFlow<AppPrefs> = settings.prefs
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppPrefs())
+
+    /** Stan klienta, który odpowiada marce zapisanego TV. */
+    val tvState: StateFlow<TvState> = combine(samsung.state, lg.state, config) { s, l, c ->
+        if (c.tv?.brand == TvBrand.LG) l else s
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, TvState.Idle)
+
+    private fun clientFor(brand: TvBrand?): TvClient = if (brand == TvBrand.LG) lg else samsung
+
+    private fun tvClient(): TvClient = clientFor(config.value.tv?.brand)
+
+    private val _scanningLg = MutableStateFlow(false)
+    val scanningLg: StateFlow<Boolean> = _scanningLg.asStateFlow()
+
+    private val _foundLg = MutableStateFlow<List<String>>(emptyList())
+    val foundLg: StateFlow<List<String>> = _foundLg.asStateFlow()
 
     private val _scanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = _scanning.asStateFlow()
@@ -121,6 +138,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         tvJob = null
         atvJob = null
         samsung.markIdle()
+        lg.markIdle()
         atv.markIdle()
     }
 
@@ -134,9 +152,16 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         if (!started) return
         tvJob = connectionLoop(
             config = { settings.tvConfig.first() },
-            idle = samsung::markIdle,
+            idle = {
+                samsung.markIdle()
+                lg.markIdle()
+            },
         ) { cfg ->
-            samsung.session(cfg) { token, pin -> viewModelScope.launch { settings.savePairing(token, pin) } }
+            clientFor(cfg.brand).session(cfg) { u ->
+                viewModelScope.launch {
+                    settings.saveTvUpdate(u.token, u.certPin, u.mac?.let(WakeOnLan::normalizeMac))
+                }
+            }
         }
     }
 
@@ -182,7 +207,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun send(key: Key) {
         when (targetFor(key)) {
-            Target.TV -> samsung.sendKey(SamsungKeys.of(key))
+            Target.TV -> tvClient().sendKey(key)
             Target.DECODER -> atv.sendKey(AtvKeys.of(key))
         }
     }
@@ -203,7 +228,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Zastępuje cały tekst w polu tekstowym na urządzeniu. */
     fun sendText(text: String): Boolean = when (activeTarget()) {
-        Target.TV -> samsung.sendText(text)
+        Target.TV -> tvClient().sendText(text)
         Target.DECODER -> atv.sendText(text)
     }
 
@@ -233,22 +258,22 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun endInput() {
         when (activeTarget()) {
-            Target.TV -> samsung.endInput()
+            Target.TV -> tvClient().endInput()
             Target.DECODER -> atv.sendKey(KeyEvent.KEYCODE_ENTER)
         }
     }
 
     /**
-     * Dekoder: KEYCODE_POWER. Samsung połączony: KEY_POWER.
-     * Samsung niepołączony: Wake-on-LAN i szybkie ponawianie połączenia.
+     * Dekoder: KEYCODE_POWER. TV połączony: wyłączenie.
+     * TV niepołączony: Wake-on-LAN i szybkie ponawianie połączenia.
      */
     fun power() {
         if (activeTarget() == Target.DECODER) {
             if (!atv.sendKey(AtvKeys.of(Key.POWER))) toast("Dekoder nie odpowiada.")
             return
         }
-        if (samsung.state.value == TvState.Connected) {
-            samsung.sendKey(SamsungKeys.of(Key.POWER))
+        if (tvState.value == TvState.Connected) {
+            tvClient().sendKey(Key.POWER)
             return
         }
         val mac = config.value.tv?.mac
@@ -283,18 +308,44 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun selectTv(tv: FoundTv) {
         viewModelScope.launch {
-            settings.saveTv(tv.ip, tv.name, tv.mac?.let(WakeOnLan::normalizeMac))
+            settings.saveTv(tv.ip, tv.name, tv.mac?.let(WakeOnLan::normalizeMac), TvBrand.SAMSUNG)
             settings.setTarget(Target.TV)
             restartTv()
         }
     }
 
-    fun selectManualIp(input: String) {
+    fun selectManualIp(input: String, brand: TvBrand) {
         val ip = input.trim()
+        if (brand == TvBrand.LG) {
+            selectLg(ip)
+            return
+        }
         viewModelScope.launch {
             val info = SamsungDiscovery.fetchInfo(ip)
             if (info == null) toast("Nie odczytano danych TV. Zapisano tylko adres IP.")
-            settings.saveTv(ip, info?.name, info?.mac?.let(WakeOnLan::normalizeMac))
+            settings.saveTv(ip, info?.name, info?.mac?.let(WakeOnLan::normalizeMac), TvBrand.SAMSUNG)
+            restartTv()
+        }
+    }
+
+    fun scanLg() {
+        if (_scanningLg.value) return
+        viewModelScope.launch {
+            _scanningLg.value = true
+            val result = runCatching {
+                NetUtils.scanSubnet(getApplication(), LG_PORT) { it }
+            }.getOrDefault(emptyList())
+            _foundLg.value = result
+            _scanningLg.value = false
+            if (result.isEmpty()) toast("Nie znaleziono TV LG. Wpisz adres IP ręcznie.")
+        }
+    }
+
+    /** MAC do Wake-on-LAN LG poda sam po pierwszym połączeniu. */
+    fun selectLg(ip: String) {
+        viewModelScope.launch {
+            settings.saveTv(ip.trim(), "LG webOS TV", null, TvBrand.LG)
+            settings.setTarget(Target.TV)
             restartTv()
         }
     }
@@ -443,6 +494,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         /** Nazwa widoczna na TV i dekoderze przy parowaniu. Zmiana wymaga ponownej zgody na TV. */
         const val CLIENT_NAME = "Pilot TV"
         const val ATV_REMOTE_PORT = 6466
+        const val LG_PORT = 3000
         const val MIN_BACKOFF_MS = 1_000L
         const val MAX_BACKOFF_MS = 15_000L
         const val WAKE_RETRY_WINDOW_MS = 30_000L
