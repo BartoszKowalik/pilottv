@@ -20,9 +20,14 @@ data class TvConfig(
     val certPin: String?,
 )
 
+enum class HapticLevel { OFF, LIGHT, MEDIUM, STRONG }
+
+enum class ThemeMode { SYSTEM, LIGHT, DARK }
+
 data class AppPrefs(
-    val haptics: Boolean = true,
+    val haptics: HapticLevel = HapticLevel.MEDIUM,
     val volumeKeys: Boolean = true,
+    val theme: ThemeMode = ThemeMode.SYSTEM,
 )
 
 class SettingsStore(private val context: Context) {
@@ -33,8 +38,11 @@ class SettingsStore(private val context: Context) {
         val TV_MAC = stringPreferencesKey("tv_mac")
         val TV_TOKEN = stringPreferencesKey("tv_token")
         val TV_CERT_PIN = stringPreferencesKey("tv_cert_pin")
-        val HAPTICS = booleanPreferencesKey("haptics")
+        /** Stary przełącznik wł./wył. z wersji 0.1.0. Czytany tylko, gdy brak [HAPTIC_LEVEL]. */
+        val HAPTICS_LEGACY = booleanPreferencesKey("haptics")
+        val HAPTIC_LEVEL = stringPreferencesKey("haptic_level")
         val VOLUME_KEYS = booleanPreferencesKey("volume_keys")
+        val THEME = stringPreferencesKey("theme")
     }
 
     val tvConfig: Flow<TvConfig?> = context.dataStore.data.map { p ->
@@ -50,9 +58,11 @@ class SettingsStore(private val context: Context) {
     }
 
     val prefs: Flow<AppPrefs> = context.dataStore.data.map { p ->
+        val legacyHaptics = if (p[Keys.HAPTICS_LEGACY] == false) HapticLevel.OFF else HapticLevel.MEDIUM
         AppPrefs(
-            haptics = p[Keys.HAPTICS] ?: true,
+            haptics = p[Keys.HAPTIC_LEVEL].toEnum(legacyHaptics),
             volumeKeys = p[Keys.VOLUME_KEYS] ?: true,
+            theme = p[Keys.THEME].toEnum(ThemeMode.SYSTEM),
         )
     }
 
@@ -94,8 +104,12 @@ class SettingsStore(private val context: Context) {
         }
     }
 
-    suspend fun setHaptics(enabled: Boolean) {
-        context.dataStore.edit { it[Keys.HAPTICS] = enabled }
+    suspend fun setHaptics(level: HapticLevel) {
+        context.dataStore.edit { it[Keys.HAPTIC_LEVEL] = level.name }
+    }
+
+    suspend fun setTheme(mode: ThemeMode) {
+        context.dataStore.edit { it[Keys.THEME] = mode.name }
     }
 
     suspend fun setVolumeKeys(enabled: Boolean) {
@@ -109,3 +123,6 @@ class SettingsStore(private val context: Context) {
         if (value != null) this[key] = value else remove(key)
     }
 }
+
+private inline fun <reified T : Enum<T>> String?.toEnum(default: T): T =
+    this?.let { name -> enumValues<T>().firstOrNull { it.name == name } } ?: default

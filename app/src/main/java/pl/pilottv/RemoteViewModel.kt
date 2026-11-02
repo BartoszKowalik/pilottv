@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import pl.pilottv.data.AppPrefs
+import pl.pilottv.data.HapticLevel
+import pl.pilottv.data.ThemeMode
 import pl.pilottv.data.SettingsStore
 import pl.pilottv.data.TvConfig
 import pl.pilottv.net.NetUtils
@@ -174,8 +176,12 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun setHaptics(enabled: Boolean) {
-        viewModelScope.launch { settings.setHaptics(enabled) }
+    fun setHaptics(level: HapticLevel) {
+        viewModelScope.launch { settings.setHaptics(level) }
+    }
+
+    fun setTheme(mode: ThemeMode) {
+        viewModelScope.launch { settings.setTheme(mode) }
     }
 
     fun setVolumeKeys(enabled: Boolean) {

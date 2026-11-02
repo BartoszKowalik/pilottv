@@ -21,6 +21,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -31,15 +32,19 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pilottv.BuildConfig
 import pl.pilottv.RemoteViewModel
+import pl.pilottv.data.HapticLevel
+import pl.pilottv.data.ThemeMode
 import pl.pilottv.data.TvConfig
 
 /** Ustawienia i konfiguracja TV. [onClose] = null, gdy TV nie jest jeszcze skonfigurowany. */
@@ -51,6 +56,8 @@ fun SetupScreen(vm: RemoteViewModel, config: TvConfig?, onClose: (() -> Unit)?) 
     val prefs by vm.prefs.collectAsStateWithLifecycle()
     var ipInput by rememberSaveable(config?.ip) { mutableStateOf(config?.ip ?: "") }
     var macInput by rememberSaveable(config?.mac) { mutableStateOf(config?.mac ?: "") }
+    val context = LocalContext.current
+    val haptics = remember(context) { Haptics(context) }
 
     if (onClose != null) BackHandler(onBack = onClose)
 
@@ -159,7 +166,30 @@ fun SetupScreen(vm: RemoteViewModel, config: TvConfig?, onClose: (() -> Unit)?) 
         }
 
         SectionTitle("Pilot")
-        SwitchRow("Wibracja przy naciśnięciu", prefs.haptics, vm::setHaptics)
+        Text("Wibracja przy naciśnięciu", style = MaterialTheme.typography.bodyLarge)
+        ChoiceChips(
+            options = listOf(
+                HapticLevel.OFF to "Wył.",
+                HapticLevel.LIGHT to "Słaba",
+                HapticLevel.MEDIUM to "Średnia",
+                HapticLevel.STRONG to "Mocna",
+            ),
+            selected = prefs.haptics,
+            onSelect = { level ->
+                vm.setHaptics(level)
+                haptics.click(level)
+            },
+        )
+        Text("Motyw", style = MaterialTheme.typography.bodyLarge)
+        ChoiceChips(
+            options = listOf(
+                ThemeMode.SYSTEM to "Systemowy",
+                ThemeMode.LIGHT to "Jasny",
+                ThemeMode.DARK to "Ciemny",
+            ),
+            selected = prefs.theme,
+            onSelect = vm::setTheme,
+        )
         SwitchRow("Przyciski głośności telefonu sterują TV", prefs.volumeKeys, vm::setVolumeKeys)
 
         Text(
@@ -178,6 +208,20 @@ private fun SectionTitle(text: String) {
         color = MaterialTheme.colorScheme.primary,
         modifier = Modifier.padding(top = 8.dp),
     )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun <T> ChoiceChips(options: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEach { (value, label) ->
+            FilterChip(
+                selected = value == selected,
+                onClick = { onSelect(value) },
+                label = { Text(label) },
+            )
+        }
+    }
 }
 
 @Composable

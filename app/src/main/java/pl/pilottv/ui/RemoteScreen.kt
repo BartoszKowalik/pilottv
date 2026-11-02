@@ -68,7 +68,8 @@ fun RemoteScreen(vm: RemoteViewModel, config: TvConfig, onOpenSettings: () -> Un
     val prefs by vm.prefs.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptics = remember(context) { Haptics(context) }
-    val haptic: () -> Unit = if (prefs.haptics) haptics::click else ({})
+    val hapticLevel = prefs.haptics
+    val haptic: () -> Unit = remember(haptics, hapticLevel) { { haptics.click(hapticLevel) } }
     val send: (String) -> Unit = vm::send
     var showMore by remember { mutableStateOf(false) }
 

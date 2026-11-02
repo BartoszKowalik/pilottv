@@ -1,8 +1,10 @@
 package pl.pilottv
 
+import android.graphics.Color
 import android.os.Bundle
 import android.view.KeyEvent
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -11,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -21,6 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import pl.pilottv.samsung.SamsungKeys
 import pl.pilottv.samsung.TvState
 import pl.pilottv.ui.PilotTheme
+import pl.pilottv.ui.isDark
 import pl.pilottv.ui.RemoteScreen
 import pl.pilottv.ui.SetupScreen
 
@@ -32,7 +36,19 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            PilotTheme { PilotApp(vm) }
+            val prefs by vm.prefs.collectAsStateWithLifecycle()
+            val dark = prefs.theme.isDark()
+            // Ikony paska stanu muszą pasować do motywu aplikacji, nie do motywu systemu.
+            DisposableEffect(dark) {
+                val style = if (dark) {
+                    SystemBarStyle.dark(Color.TRANSPARENT)
+                } else {
+                    SystemBarStyle.light(Color.TRANSPARENT, Color.TRANSPARENT)
+                }
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                onDispose {}
+            }
+            PilotTheme(dark) { PilotApp(vm) }
         }
     }
 
