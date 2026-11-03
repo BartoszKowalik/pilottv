@@ -243,7 +243,12 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     fun addShortcut(name: String, app: String) {
         val n = name.trim()
         // Akceptujemy też cały link ze Sklepu Play: ...details?id=com.example.app
-        val a = app.trim().substringAfter("id=").substringBefore("&")
+        val raw = app.trim()
+        val a = if ("play.google.com" in raw || "market://" in raw) {
+            raw.substringAfter("id=").substringBefore("&")
+        } else {
+            raw
+        }
         if (n.isEmpty() || a.isEmpty()) return
         viewModelScope.launch { settings.saveShortcuts(shortcuts.value + AppShortcut(n, a)) }
     }

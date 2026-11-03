@@ -249,7 +249,7 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
                     }
                 }
             }
-            Hint("Nowy skrót: nazwa pakietu z adresu aplikacji w Sklepie Play (…details?id=nazwa.pakietu). Możesz wkleić cały link.")
+            Hint("Nowy skrót: link do aplikacji (np. https://www.netflix.com/title) albo nazwa pakietu ze Sklepu Play (…details?id=nazwa.pakietu). Link działa na większej liczbie dekoderów.")
             OutlinedTextField(
                 value = shortcutName,
                 onValueChange = { shortcutName = it },
