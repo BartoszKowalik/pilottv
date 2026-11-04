@@ -68,6 +68,7 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
     var ipInput by rememberSaveable(config?.ip) { mutableStateOf(config?.ip ?: "") }
     var macInput by rememberSaveable(config?.mac) { mutableStateOf(config?.mac ?: "") }
     var atvIpInput by rememberSaveable(atv?.ip) { mutableStateOf(atv?.ip ?: "") }
+    var atvMacInput by rememberSaveable(atv?.mac) { mutableStateOf(atv?.mac ?: "") }
     var manualBrand by rememberSaveable(config?.brand) { mutableStateOf(config?.brand ?: TvBrand.SAMSUNG) }
     val scanningLg by vm.scanningLg.collectAsStateWithLifecycle()
     val foundLg by vm.foundLg.collectAsStateWithLifecycle()
@@ -235,6 +236,21 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
         ) { Text("Sparuj dekoder") }
         if (config != null && atv != null) {
             SwitchRow("Głośność zawsze steruje telewizorem", prefs.volumeToTv, vm::setVolumeToTv)
+        }
+        if (atv != null) {
+            Text("Włączanie dekodera (Wake-on-LAN)", style = MaterialTheme.typography.bodyLarge)
+            Hint(
+                "MAC znajdziesz na dekoderze: Ustawienia → Sieć i internet → Ethernet " +
+                    "(albo Ustawienia → Informacje → Stan). Wake-on-LAN zwykle działa tylko przez kabel.",
+            )
+            OutlinedTextField(
+                value = atvMacInput,
+                onValueChange = { atvMacInput = it },
+                label = { Text("MAC dekodera") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            OutlinedButton(onClick = { vm.saveAtvMac(atvMacInput) }) { Text("Zapisz MAC") }
         }
         if (atv != null) {
             Text("Skróty aplikacji na dekoderze", style = MaterialTheme.typography.bodyLarge)

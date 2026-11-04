@@ -269,12 +269,18 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * Dekoder: KEYCODE_POWER. TV połączony: wyłączenie.
-     * TV niepołączony: Wake-on-LAN i szybkie ponawianie połączenia.
+     * Urządzenie połączone: klawisz zasilania (TV wyłącza się, dekoder przełącza stan).
+     * Urządzenie niepołączone: Wake-on-LAN i szybkie ponawianie połączenia.
      */
     fun power() {
         if (activeTarget() == Target.DECODER) {
-            if (!atv.sendKey(AtvKeys.of(Key.POWER))) toast("Dekoder nie odpowiada.")
+            if (atvState.value == TvState.Connected && atv.sendKey(AtvKeys.of(Key.POWER))) return
+            val mac = config.value.atv?.mac
+            if (mac == null) {
+                toast("Dekoder nie odpowiada. Aby go włączyć, wpisz MAC dekodera w ustawieniach.")
+                return
+            }
+            wake(mac, "Włączam dekoder…", ::restartAtv)
             return
         }
         if (tvState.value == TvState.Connected) {
@@ -286,15 +292,19 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             toast("Brak adresu MAC. Nie można włączyć TV. Uzupełnij MAC w ustawieniach.")
             return
         }
+        wake(mac, "Włączam TV…", ::restartTv)
+    }
+
+    private fun wake(mac: String, message: String, reconnect: () -> Unit) {
         viewModelScope.launch {
             runCatching { WakeOnLan.send(mac, NetUtils.broadcastAddress(getApplication())) }
                 .onFailure {
                     toast("Nie udało się wysłać sygnału Wake-on-LAN.")
                     return@launch
                 }
-            toast("Włączam TV…")
+            toast(message)
             fastRetryUntil = SystemClock.elapsedRealtime() + WAKE_RETRY_WINDOW_MS
-            restartTv()
+            reconnect()
         }
     }
 
@@ -451,6 +461,18 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         pairingSession?.close()
         pairingSession = null
         _pairing.value = PairingUi.Idle
+    }
+
+    fun saveAtvMac(input: String) {
+        val mac = if (input.isBlank()) null else WakeOnLan.normalizeMac(input)
+        if (input.isNotBlank() && mac == null) {
+            toast("Niepoprawny format MAC. Przykład: AA:BB:CC:DD:EE:FF")
+            return
+        }
+        viewModelScope.launch {
+            settings.saveAtvMac(mac)
+            toast("Zapisano MAC dekodera.")
+        }
     }
 
     fun forgetAtv() {

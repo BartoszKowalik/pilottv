@@ -30,11 +30,15 @@ data class TvConfig(
     val brand: TvBrand = TvBrand.SAMSUNG,
 )
 
-/** Sparowany dekoder Android TV. [certPin] zapisujemy przy pierwszym połączeniu po parowaniu. */
+/**
+ * Sparowany dekoder Android TV. [certPin] zapisujemy przy pierwszym połączeniu po parowaniu.
+ * [mac] wpisuje użytkownik (do Wake-on-LAN). Protokół pilota nie podaje MAC.
+ */
 data class AtvConfig(
     val ip: String,
     val name: String?,
     val certPin: String?,
+    val mac: String? = null,
 )
 
 enum class HapticLevel { OFF, LIGHT, MEDIUM, STRONG }
@@ -75,6 +79,7 @@ class SettingsStore(private val context: Context) {
         val ATV_IP = stringPreferencesKey("atv_ip")
         val ATV_NAME = stringPreferencesKey("atv_name")
         val ATV_CERT_PIN = stringPreferencesKey("atv_cert_pin")
+        val ATV_MAC = stringPreferencesKey("atv_mac")
         val SHORTCUTS = stringPreferencesKey("shortcuts")
     }
 
@@ -105,11 +110,15 @@ class SettingsStore(private val context: Context) {
     }
 
     val atvConfig: Flow<AtvConfig?> = context.dataStore.data.map { p ->
-        p[Keys.ATV_IP]?.let { ip -> AtvConfig(ip = ip, name = p[Keys.ATV_NAME], certPin = p[Keys.ATV_CERT_PIN]) }
+        p[Keys.ATV_IP]?.let { ip ->
+            AtvConfig(ip = ip, name = p[Keys.ATV_NAME], certPin = p[Keys.ATV_CERT_PIN], mac = p[Keys.ATV_MAC])
+        }
     }
 
     suspend fun saveAtv(ip: String, name: String?) {
         context.dataStore.edit { p ->
+            // Inny adres IP może oznaczać inny dekoder, więc stary MAC nie pasuje.
+            if (p[Keys.ATV_IP] != ip) p.remove(Keys.ATV_MAC)
             p[Keys.ATV_IP] = ip
             p.setOrRemove(Keys.ATV_NAME, name)
             // Nowe parowanie: certyfikat dekodera zapiszemy przy pierwszym połączeniu.
@@ -121,9 +130,13 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[Keys.ATV_CERT_PIN] = pin }
     }
 
+    suspend fun saveAtvMac(mac: String?) {
+        context.dataStore.edit { it.setOrRemove(Keys.ATV_MAC, mac) }
+    }
+
     suspend fun forgetAtv() {
         context.dataStore.edit { p ->
-            listOf(Keys.ATV_IP, Keys.ATV_NAME, Keys.ATV_CERT_PIN).forEach { p.remove(it) }
+            listOf(Keys.ATV_IP, Keys.ATV_NAME, Keys.ATV_CERT_PIN, Keys.ATV_MAC).forEach { p.remove(it) }
         }
     }
 
