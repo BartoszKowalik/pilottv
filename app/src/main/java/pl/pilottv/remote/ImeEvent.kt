@@ -17,12 +17,13 @@ data class AppShortcut(val name: String, val app: String) {
         // Linki zamiast nazw pakietów: nazwa pakietu idzie jako market://launch?id=…,
         // a dekodery bez obsługi tego linku zrywają połączenie i nie uruchamiają aplikacji.
         val DEFAULTS = listOf(
-            AppShortcut("Netflix", "https://www.netflix.com/title"),
             AppShortcut("YouTube", "https://www.youtube.com"),
-            AppShortcut("Disney+", "https://www.disneyplus.com"),
+            AppShortcut("Netflix", "https://www.netflix.com/title"),
             AppShortcut("Prime Video", "https://app.primevideo.com"),
-            AppShortcut("Max", "https://play.max.com"),
-            AppShortcut("Spotify", "spotify://"),
+            AppShortcut("HBO Max", "https://play.hbomax.com"),
+            AppShortcut("SkyShowtime", "https://www.skyshowtime.com"),
+            AppShortcut("Amazon Luna", "https://luna.amazon.com"),
+            AppShortcut("Google Play", "https://play.google.com/store/apps"),
         )
     }
 }

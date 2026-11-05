@@ -257,6 +257,16 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settings.saveShortcuts(shortcuts.value - shortcut) }
     }
 
+    /** Przesuwa skrót o [delta] pozycji (-1 = wyżej, 1 = niżej). */
+    fun moveShortcut(shortcut: AppShortcut, delta: Int) {
+        val list = shortcuts.value.toMutableList()
+        val from = list.indexOf(shortcut)
+        val to = from + delta
+        if (from < 0 || to !in list.indices) return
+        list.add(to, list.removeAt(from))
+        viewModelScope.launch { settings.saveShortcuts(list) }
+    }
+
     fun resetShortcuts() {
         viewModelScope.launch { settings.saveShortcuts(null) }
     }

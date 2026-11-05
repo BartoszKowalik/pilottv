@@ -325,7 +325,11 @@ private fun ShortcutRow(a: RemoteActions) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         a.shortcuts.forEach { shortcut ->
-            AssistChip(onClick = { a.launch(shortcut) }, label = { Text(shortcut.name) })
+            AssistChip(
+                onClick = { a.launch(shortcut) },
+                label = { Text(shortcut.name) },
+                leadingIcon = { ShortcutIcon(shortcut) },
+            )
         }
     }
 }

@@ -17,6 +17,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -254,11 +256,25 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
         }
         if (atv != null) {
             Text("Skróty aplikacji na dekoderze", style = MaterialTheme.typography.bodyLarge)
-            shortcuts.forEach { shortcut ->
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            shortcuts.forEachIndexed { index, shortcut ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ShortcutIcon(shortcut, size = 28.dp)
                     Column(Modifier.weight(1f)) {
                         Text(shortcut.name, style = MaterialTheme.typography.bodyMedium)
                         Hint(shortcut.app)
+                    }
+                    IconButton(onClick = { vm.moveShortcut(shortcut, -1) }, enabled = index > 0) {
+                        Icon(Icons.Filled.KeyboardArrowUp, contentDescription = "Przesuń ${shortcut.name} wyżej")
+                    }
+                    IconButton(
+                        onClick = { vm.moveShortcut(shortcut, 1) },
+                        enabled = index < shortcuts.lastIndex,
+                    ) {
+                        Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "Przesuń ${shortcut.name} niżej")
                     }
                     IconButton(onClick = { vm.removeShortcut(shortcut) }) {
                         Icon(Icons.Filled.Delete, contentDescription = "Usuń ${shortcut.name}")
