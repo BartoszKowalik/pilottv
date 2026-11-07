@@ -284,8 +284,17 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun power() {
         if (activeTarget() == Target.DECODER) {
-            if (atvState.value == TvState.Connected && atv.sendKey(AtvKeys.of(Key.POWER))) return
             val mac = config.value.atv?.mac
+            if (atvState.value == TvState.Connected && atv.sendKey(AtvKeys.of(Key.POWER))) {
+                // Po przejściu w czuwanie połączenie wygląda na aktywne jeszcze do 20 s i klawisz ginie.
+                // Pakiet WoL do włączonego dekodera nic nie zmienia, więc wysyłamy go zawsze.
+                if (mac != null) {
+                    viewModelScope.launch {
+                        runCatching { WakeOnLan.send(mac, NetUtils.broadcastAddress(getApplication())) }
+                    }
+                }
+                return
+            }
             if (mac == null) {
                 toast("Dekoder nie odpowiada. Aby go włączyć, wpisz MAC dekodera w ustawieniach.")
                 return

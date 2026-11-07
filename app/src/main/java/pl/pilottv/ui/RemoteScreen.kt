@@ -485,12 +485,15 @@ private fun Header(
                 Icon(Icons.Filled.Settings, contentDescription = "Ustawienia")
             }
         }
-        if (state != TvState.Connected) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        // Stała wysokość: komunikat nie może zmieniać rozmiaru przycisków pod spodem.
+        Row(Modifier.fillMaxWidth().height(STATUS_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
+            if (state != TvState.Connected) {
                 Text(
                     statusText(state),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f),
                 )
                 when {
@@ -505,6 +508,8 @@ private fun Header(
         }
     }
 }
+
+private val STATUS_HEIGHT = 44.dp
 
 private fun statusColor(state: TvState): Color = when (state) {
     TvState.Connected -> Color(0xFF4CAF50)
