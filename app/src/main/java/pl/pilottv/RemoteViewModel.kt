@@ -76,6 +76,24 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     private val atv = AtvRemote({ identity }, CLIENT_NAME)
 
     val atvState: StateFlow<TvState> = atv.state
+
+    /** Pakiet aplikacji otwartej na dekoderze (null, gdy nieznany). */
+    val atvCurrentApp: StateFlow<String?> = atv.currentApp
+
+    init {
+        viewModelScope.launch {
+            atv.linkFailed.collect { link ->
+                toast(
+                    if (link.startsWith(AtvRemote.HELPER_LINK)) {
+                        // Brak samej aplikacji obsługuje pomocnik (komunikat na TV), więc tu brakuje pomocnika.
+                        "Na dekoderze brak aplikacji „Pilot TV – pomocnik”. Zainstaluj pilot-tv-helper."
+                    } else {
+                        "Dekoder nie ma aplikacji, która otwiera ten link."
+                    },
+                )
+            }
+        }
+    }
     val ime: Flow<ImeEvent> = merge(samsung.ime, lg.ime, atv.ime)
 
     val shortcuts: StateFlow<List<AppShortcut>> = settings.shortcuts

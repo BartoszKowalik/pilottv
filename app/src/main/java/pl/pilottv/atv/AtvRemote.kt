@@ -39,6 +39,23 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
     private val _ime = MutableSharedFlow<ImeEvent>(extraBufferCapacity = 8)
     val ime: SharedFlow<ImeEvent> = _ime.asSharedFlow()
 
+    /** Pakiet aplikacji na pierwszym planie. Dekoder zgłasza go przy połączeniu i po każdej zmianie. */
+    private val _currentApp = MutableStateFlow<String?>(null)
+    val currentApp: StateFlow<String?> = _currentApp.asStateFlow()
+
+    /**
+     * Link, po którym dekoder zerwał połączenie. Usługa pilota zamyka połączenie,
+     * gdy żadna aplikacja nie obsługuje linku (ActivityNotFoundException w logach dekodera).
+     */
+    private val _linkFailed = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val linkFailed: SharedFlow<String> = _linkFailed.asSharedFlow()
+
+    @Volatile
+    private var lastLink: String? = null
+
+    @Volatile
+    private var lastLinkAt = 0L
+
     private val sessionIds = AtomicInteger()
 
     @Volatile
@@ -72,6 +89,7 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         activeId = sessionIds.incrementAndGet()
         output = null
         _state.value = TvState.Idle
+        _currentApp.value = null
     }
 
     /** [onPinSeen] dostaje skrót certyfikatu dekodera przy pierwszym połączeniu po parowaniu. */
@@ -124,6 +142,12 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
                     runCatching { socketRef.get()?.close() }
                     if (activeId == id) output = null
                 }
+                val link = lastLink
+                if (active && link != null && System.currentTimeMillis() - lastLinkAt < LINK_FAIL_WINDOW_MS) {
+                    lastLink = null
+                    _linkFailed.tryEmit(link)
+                }
+                if (activeId == id) _currentApp.value = null
                 update(TvState.Failed(result.end))
                 if (cont.isActive) cont.resume(result)
             }
@@ -169,6 +193,13 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
                 }
             }
             msg.has(IME_KEY_INJECT) -> {
+                // app_info(1) → app_package(12): aplikacja na pierwszym planie.
+                val pkg = runCatching { msg.message(IME_KEY_INJECT)?.message(1)?.string(12) }.getOrNull()
+                if (pkg != null) {
+                    _currentApp.value = pkg.ifEmpty { null }
+                    // Aplikacja się zmieniła, więc wysłany link zadziałał.
+                    lastLink = null
+                }
                 // text_field_status(2) → value(2): zawartość pola po przejściu do niego.
                 val text = runCatching { msg.message(IME_KEY_INJECT)?.message(2)?.string(2) }.getOrNull()
                 if (text != null) {
@@ -208,8 +239,13 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
      * market://launch, dekoder nie ma obsługi linku i zrywa połączenie.
      */
     fun launchApp(linkOrPackage: String): Boolean {
-        val link = if ("://" in linkOrPackage) linkOrPackage else "pilottv://launch?app=$linkOrPackage"
-        return enqueue(proto { message(APP_LINK_LAUNCH) { string(1, link) } })
+        val link = if ("://" in linkOrPackage) linkOrPackage else "$HELPER_LINK$linkOrPackage"
+        val sent = enqueue(proto { message(APP_LINK_LAUNCH) { string(1, link) } })
+        if (sent) {
+            lastLink = link
+            lastLinkAt = System.currentTimeMillis()
+        }
+        return sent
     }
 
     /**
@@ -245,8 +281,12 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         return true
     }
 
-    private companion object {
-        const val REMOTE_PORT = 6466
+    companion object {
+        /** Link obsługiwany przez aplikację pomocniczą (moduł tvhelper). */
+        const val HELPER_LINK = "pilottv://launch?app="
+
+        private const val LINK_FAIL_WINDOW_MS = 3_000L
+        private const val REMOTE_PORT = 6466
         const val CONNECT_TIMEOUT_MS = 4_000
         // Dekoder wysyła ping co kilka sekund. Brak danych przez ten czas = zerwane połączenie.
         const val READ_TIMEOUT_MS = 20_000

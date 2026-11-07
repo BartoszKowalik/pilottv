@@ -51,7 +51,6 @@ import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TouchApp
-import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -114,6 +113,8 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
     val haptic: () -> Unit = remember(haptics, hapticLevel) { { haptics.click(hapticLevel) } }
     val send: (Key) -> Unit = vm::send
     val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
+    val atvApp by vm.atvCurrentApp.collectAsStateWithLifecycle()
+    val currentApp = if (target == Target.DECODER) atvApp else null
     var showMore by remember { mutableStateOf(false) }
     var showKeyboard by remember { mutableStateOf(false) }
     var keyboardText by remember { mutableStateOf(EditedText("", fromUser = false)) }
@@ -178,6 +179,7 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
         touchpad = prefs.touchpad,
         shortcuts = if (target == Target.DECODER) shortcuts else emptyList(),
         launch = vm::launchShortcut,
+        currentApp = currentApp,
     )
 
     CompositionLocalProvider(LocalHaptic provides haptic) {
@@ -190,6 +192,7 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
             Header(
                 title = title,
                 state = state,
+                appName = currentApp?.let { pkg -> shortcuts.firstOrNull { it.packageName == pkg }?.name },
                 touchpad = prefs.touchpad,
                 onToggleTouchpad = { vm.setTouchpad(!prefs.touchpad) },
                 onOpenSettings = onOpenSettings,
@@ -311,6 +314,8 @@ private class RemoteActions(
     val touchpad: Boolean,
     val shortcuts: List<AppShortcut>,
     val launch: (AppShortcut) -> Unit,
+    /** Pakiet aplikacji otwartej na dekoderze: jej skrót jest zaznaczony. */
+    val currentApp: String?,
 )
 
 /** Skróty do aplikacji VOD (tylko dekoder). Przewijane poziomo. */
@@ -325,7 +330,8 @@ private fun ShortcutRow(a: RemoteActions) {
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         a.shortcuts.forEach { shortcut ->
-            AssistChip(
+            FilterChip(
+                selected = a.currentApp != null && shortcut.packageName == a.currentApp,
                 onClick = { a.launch(shortcut) },
                 label = { Text(shortcut.name) },
                 leadingIcon = { ShortcutIcon(shortcut) },
@@ -453,6 +459,7 @@ private fun MediaKeys(a: RemoteActions) {
 private fun Header(
     title: String,
     state: TvState,
+    appName: String?,
     touchpad: Boolean,
     onToggleTouchpad: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -477,7 +484,7 @@ private fun Header(
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                statusText(state),
+                if (state == TvState.Connected && appName != null) "Połączono · $appName" else statusText(state),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
