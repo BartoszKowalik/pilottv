@@ -459,57 +459,52 @@ private fun Header(
     onRetry: () -> Unit,
     onRepair: () -> Unit,
 ) {
-    Column(Modifier.fillMaxWidth()) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(10.dp)
-                    .clip(CircleShape)
-                    .background(statusColor(state)),
-            )
-            Spacer(Modifier.width(10.dp))
+    // Komunikat to druga linia pod nazwą. Wiersz ma stałą wysokość (jak ikony),
+    // więc komunikat nie zmienia rozmiaru przycisków pod spodem.
+    Row(Modifier.fillMaxWidth().height(HEADER_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier
+                .size(10.dp)
+                .clip(CircleShape)
+                .background(statusColor(state)),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
             Text(
                 title,
                 style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f),
             )
-            IconButton(onClick = onToggleTouchpad) {
-                Icon(
-                    if (touchpad) Icons.Filled.Gamepad else Icons.Filled.TouchApp,
-                    contentDescription = if (touchpad) "Przełącz na krzyżak" else "Przełącz na touchpad",
-                )
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Filled.Settings, contentDescription = "Ustawienia")
-            }
+            Text(
+                statusText(state),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
-        // Stała wysokość: komunikat nie może zmieniać rozmiaru przycisków pod spodem.
-        Row(Modifier.fillMaxWidth().height(STATUS_HEIGHT), verticalAlignment = Alignment.CenterVertically) {
-            if (state != TvState.Connected) {
-                Text(
-                    statusText(state),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                when {
-                    state is TvState.Failed && state.reason == SessionEnd.CERT_CHANGED ->
-                        TextButton(onClick = onRepair) { Text("Sparuj ponownie") }
-                    state is TvState.Failed && state.reason == SessionEnd.NOT_PAIRED ->
-                        TextButton(onClick = onRepair) { Text("Sparuj") }
-                    state is TvState.Failed && state.reason == SessionEnd.DENIED ->
-                        TextButton(onClick = onRetry) { Text("Ponów") }
-                }
-            }
+        when {
+            state is TvState.Failed && state.reason == SessionEnd.CERT_CHANGED ->
+                TextButton(onClick = onRepair) { Text("Sparuj") }
+            state is TvState.Failed && state.reason == SessionEnd.NOT_PAIRED ->
+                TextButton(onClick = onRepair) { Text("Sparuj") }
+            state is TvState.Failed && state.reason == SessionEnd.DENIED ->
+                TextButton(onClick = onRetry) { Text("Ponów") }
+        }
+        IconButton(onClick = onToggleTouchpad) {
+            Icon(
+                if (touchpad) Icons.Filled.Gamepad else Icons.Filled.TouchApp,
+                contentDescription = if (touchpad) "Przełącz na krzyżak" else "Przełącz na touchpad",
+            )
+        }
+        IconButton(onClick = onOpenSettings) {
+            Icon(Icons.Filled.Settings, contentDescription = "Ustawienia")
         }
     }
 }
 
-private val STATUS_HEIGHT = 44.dp
+private val HEADER_HEIGHT = 48.dp
 
 private fun statusColor(state: TvState): Color = when (state) {
     TvState.Connected -> Color(0xFF4CAF50)
@@ -517,18 +512,19 @@ private fun statusColor(state: TvState): Color = when (state) {
     TvState.Idle, is TvState.Failed -> Color(0xFF9E9E9E)
 }
 
+/** Krótkie teksty: mieszczą się w jednej linii pod nazwą urządzenia. */
 private fun statusText(state: TvState): String = when (state) {
     TvState.Idle -> "Rozłączono"
-    TvState.Connecting -> "Łączenie… Jeśli TV pyta o zgodę, wybierz „Zezwól”."
+    TvState.Connecting -> "Łączenie… Zezwól na TV, jeśli pyta."
     TvState.AwaitingApproval -> "Na ekranie TV wybierz „Zezwól”."
     TvState.Connected -> "Połączono"
     is TvState.Failed -> when (state.reason) {
         SessionEnd.CLOSED -> "Rozłączono. Łączę ponownie…"
-        SessionEnd.UNREACHABLE -> "Urządzenie nie odpowiada. Jeśli jest wyłączone, naciśnij zasilanie."
+        SessionEnd.UNREACHABLE -> "Nie odpowiada. Włącz zasilaniem."
         SessionEnd.TIMEOUT -> "Brak zgody na TV. Ponawiam…"
         SessionEnd.DENIED -> "TV odrzucił połączenie."
-        SessionEnd.CERT_CHANGED -> "Certyfikat urządzenia się zmienił. Sparuj je ponownie."
-        SessionEnd.NOT_PAIRED -> "Dekoder nie rozpoznaje telefonu. Sparuj go ponownie w ustawieniach."
+        SessionEnd.CERT_CHANGED -> "Certyfikat się zmienił."
+        SessionEnd.NOT_PAIRED -> "Dekoder nie zna telefonu."
     }
 }
 
