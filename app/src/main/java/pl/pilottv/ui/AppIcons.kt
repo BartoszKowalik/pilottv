@@ -50,7 +50,14 @@ object AppIcons {
         "play.hbomax.com" to "hbomax.com",
     )
 
+    // Skróty z samą nazwą pakietu: domena serwisu do pobrania logo.
+    private val PACKAGE_DOMAINS = mapOf(
+        "com.skyshowtime.skyshowtime.google" to "skyshowtime.com",
+        "com.amazon.spiderpork" to "luna.amazon.com",
+    )
+
     fun domainOf(shortcut: AppShortcut): String? {
+        PACKAGE_DOMAINS[shortcut.app]?.let { return it }
         val host = runCatching { Uri.parse(shortcut.app).host }.getOrNull()
             ?.takeIf { shortcut.app.startsWith("http") && it.isNotEmpty() }
             ?: return null

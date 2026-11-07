@@ -281,7 +281,10 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
                     }
                 }
             }
-            Hint("Nowy skrót: link do aplikacji (np. https://www.netflix.com/title) albo nazwa pakietu ze Sklepu Play (…details?id=nazwa.pakietu). Link działa na większej liczbie dekoderów.")
+            Hint(
+                "Nowy skrót: link do aplikacji (np. https://www.netflix.com/title) albo nazwa pakietu " +
+                    "(…details?id=nazwa.pakietu). Nazwa pakietu działa tylko z aplikacją „Pilot TV – pomocnik” na dekoderze.",
+            )
             OutlinedTextField(
                 value = shortcutName,
                 onValueChange = { shortcutName = it },

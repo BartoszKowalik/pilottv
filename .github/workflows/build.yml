@@ -45,7 +45,9 @@ jobs:
         run: gradle assembleRelease --stacktrace
 
       - name: Nazwa pliku APK
-        run: cp app/build/outputs/apk/release/app-release.apk "pilot-tv-${GITHUB_REF_NAME//\//-}.apk"
+        run: |
+          cp app/build/outputs/apk/release/app-release.apk "pilot-tv-${GITHUB_REF_NAME//\//-}.apk"
+          cp tvhelper/build/outputs/apk/release/tvhelper-release.apk "pilot-tv-helper-${GITHUB_REF_NAME//\//-}.apk"
 
       - uses: actions/upload-artifact@v4
         with:

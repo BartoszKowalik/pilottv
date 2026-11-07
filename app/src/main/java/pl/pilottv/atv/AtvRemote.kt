@@ -58,6 +58,16 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
     @Volatile
     private var imeFieldCounter = 0
 
+    /**
+     * Tekst w polu na dekoderze, tak jak go znamy. Dekoder dopisuje tekst z IME_BATCH_EDIT
+     * na końcu pola (nie zastępuje go), więc wysyłamy tylko różnicę.
+     */
+    @Volatile
+    private var fieldText = ""
+
+    @Volatile
+    private var lastTextSentAt = 0L
+
     fun markIdle() {
         activeId = sessionIds.incrementAndGet()
         output = null
@@ -72,6 +82,7 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
             if (activeId == id) _state.value = newState
         }
         update(TvState.Connecting)
+        fieldText = ""
 
         return suspendCancellableCoroutine { cont ->
             val socketRef = AtomicReference<Socket?>()
@@ -150,16 +161,24 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
                     imeFieldCounter = edit.int(2)?.toInt() ?: imeFieldCounter
                     // edit_info(3) → text_field_status(2) → value(3)
                     val text = runCatching { edit.message(3)?.message(2)?.string(3) }.getOrNull()
-                    if (text != null) _ime.tryEmit(ImeEvent.Updated(text))
+                    if (text != null) {
+                        // Echo naszych zmian może przyjść ze starszym stanem pola, więc tuż po wysłaniu go pomijamy.
+                        if (System.currentTimeMillis() - lastTextSentAt > ECHO_GUARD_MS) fieldText = text
+                        _ime.tryEmit(ImeEvent.Updated(text))
+                    }
                 }
             }
             msg.has(IME_KEY_INJECT) -> {
                 // text_field_status(2) → value(2): zawartość pola po przejściu do niego.
                 val text = runCatching { msg.message(IME_KEY_INJECT)?.message(2)?.string(2) }.getOrNull()
-                if (text != null) _ime.tryEmit(ImeEvent.Updated(text))
+                if (text != null) {
+                    fieldText = text
+                    _ime.tryEmit(ImeEvent.Updated(text))
+                }
             }
             msg.has(IME_SHOW_REQUEST) -> {
                 val text = runCatching { msg.message(IME_SHOW_REQUEST)?.message(2)?.string(2) }.getOrNull()
+                fieldText = text ?: ""
                 _ime.tryEmit(ImeEvent.Opened(text))
             }
         }
@@ -183,28 +202,47 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         }
     })
 
-    /** Uruchamia aplikację: link (https://…) albo nazwa pakietu. */
+    /**
+     * Uruchamia aplikację: link (https://…) albo nazwa pakietu.
+     * Pakiet uruchamia aplikacja pomocnicza na dekoderze (moduł tvhelper). Bez niej, tak jak przy
+     * market://launch, dekoder nie ma obsługi linku i zrywa połączenie.
+     */
     fun launchApp(linkOrPackage: String): Boolean {
-        val link = if ("://" in linkOrPackage) linkOrPackage else "market://launch?id=$linkOrPackage"
+        val link = if ("://" in linkOrPackage) linkOrPackage else "pilottv://launch?app=$linkOrPackage"
         return enqueue(proto { message(APP_LINK_LAUNCH) { string(1, link) } })
     }
 
-    /** Zastępuje tekst w polu tekstowym na dekoderze (pusty tekst czyści pole). */
+    /**
+     * Ustawia tekst w polu na dekoderze (pusty tekst czyści pole).
+     * Wysyła tylko różnicę: Backspace dla usuniętych znaków i wstawienie nowych.
+     */
     fun sendText(text: String): Boolean {
-        return enqueue(proto {
-            message(IME_BATCH_EDIT) {
-                int(1, imeCounter)
-                int(2, imeFieldCounter)
-                message(3) {
-                    int(1, 1)
-                    message(2) {
-                        int(1, text.length - 1)
-                        int(2, text.length - 1)
-                        string(3, text)
+        if (output == null) return false
+        val previous = fieldText
+        val common = previous.commonPrefixWith(text).length
+        val toDelete = previous.codePointCount(common, previous.length)
+        val toInsert = text.substring(common)
+        repeat(toDelete) { if (!sendKey(KEYCODE_DEL)) return false }
+        if (toInsert.isNotEmpty()) {
+            val sent = enqueue(proto {
+                message(IME_BATCH_EDIT) {
+                    int(1, imeCounter)
+                    int(2, imeFieldCounter)
+                    message(3) {
+                        int(1, 1)
+                        message(2) {
+                            int(1, toInsert.length - 1)
+                            int(2, toInsert.length - 1)
+                            string(3, toInsert)
+                        }
                     }
                 }
-            }
-        })
+            })
+            if (!sent) return false
+        }
+        fieldText = text
+        lastTextSentAt = System.currentTimeMillis()
+        return true
     }
 
     private companion object {
@@ -228,5 +266,7 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         const val APP_LINK_LAUNCH = 90
 
         const val DIRECTION_SHORT = 3
+        const val KEYCODE_DEL = 67
+        const val ECHO_GUARD_MS = 1_500L
     }
 }

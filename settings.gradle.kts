@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "PilotTV"
 include(":app")
+include(":tvhelper")

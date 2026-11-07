@@ -14,15 +14,16 @@ sealed interface ImeEvent {
 /** Skrót do aplikacji na dekoderze: nazwa pakietu Android albo link. */
 data class AppShortcut(val name: String, val app: String) {
     companion object {
-        // Linki zamiast nazw pakietów: nazwa pakietu idzie jako market://launch?id=…,
-        // a dekodery bez obsługi tego linku zrywają połączenie i nie uruchamiają aplikacji.
+        // Linki, gdzie to możliwe: nazwa pakietu wymaga aplikacji pomocniczej na dekoderze.
+        // Bez niej dekoder nie ma obsługi linku i zrywa połączenie.
         val DEFAULTS = listOf(
             AppShortcut("YouTube", "https://www.youtube.com"),
             AppShortcut("Netflix", "https://www.netflix.com/title"),
             AppShortcut("Prime Video", "https://app.primevideo.com"),
             AppShortcut("HBO Max", "https://play.hbomax.com"),
-            AppShortcut("SkyShowtime", "https://www.skyshowtime.com"),
-            AppShortcut("Amazon Luna", "https://luna.amazon.com"),
+            // Te dwie aplikacje nie obsługują linków: uruchamia je aplikacja pomocnicza po nazwie pakietu.
+            AppShortcut("SkyShowtime", "com.skyshowtime.skyshowtime.google"),
+            AppShortcut("Amazon Luna", "com.amazon.spiderpork"),
             AppShortcut("Google Play", "https://play.google.com/store/apps"),
         )
     }
