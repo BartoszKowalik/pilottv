@@ -62,11 +62,16 @@ import pl.pilottv.remote.Key
 /** Wibracja przy naciśnięciu. Dostarczana przez ekran, bo zależy od ustawień. */
 val LocalHaptic = staticCompositionLocalOf<() -> Unit> { {} }
 
+/** true w przewijanych kontenerach: komenda idzie po puszczeniu palca, żeby przewijanie nie wysyłało klawiszy. */
+val LocalPressOnRelease = staticCompositionLocalOf { false }
+
 private const val REPEAT_DELAY_MS = 400L
 private const val REPEAT_INTERVAL_MS = 120L
 
 /**
- * Przycisk pilota. Komenda idzie w chwili dotknięcia (nie po puszczeniu), co daje szybszą reakcję.
+ * Przycisk pilota. Zwykle komenda idzie w chwili dotknięcia (nie po puszczeniu), co daje szybszą reakcję.
+ * W przewijanym kontenerze ([LocalPressOnRelease] = true) komenda idzie po puszczeniu palca.
+ * Gdy gest przejmie przewijanie, komenda nie idzie.
  * Gdy [repeat] = true, przytrzymanie powtarza komendę.
  */
 @Composable
@@ -84,6 +89,7 @@ fun RemoteButton(
     val currentOnPress by rememberUpdatedState(onPress)
     val currentHaptic by rememberUpdatedState(haptic)
     val scope = rememberCoroutineScope()
+    val pressOnRelease = LocalPressOnRelease.current
     var pressed by remember { mutableStateOf(false) }
     val background = if (pressed) contentColor.copy(alpha = 0.22f).compositeOver(color) else color
 
@@ -99,7 +105,39 @@ fun RemoteButton(
                     true
                 }
             }
-            .pointerInput(repeat) {
+            .pointerInput(repeat, pressOnRelease) {
+                if (pressOnRelease) {
+                    awaitEachGesture {
+                        awaitFirstDown()
+                        pressed = true
+                        var repeated = false
+                        val job = if (repeat) {
+                            scope.launch {
+                                delay(REPEAT_DELAY_MS)
+                                currentHaptic()
+                                while (isActive) {
+                                    repeated = true
+                                    currentOnPress()
+                                    delay(REPEAT_INTERVAL_MS)
+                                }
+                            }
+                        } else {
+                            null
+                        }
+                        try {
+                            // null = gest przejęło przewijanie albo palec wyszedł poza przycisk.
+                            val up = waitForUpOrCancellation()
+                            if (up != null && !repeated) {
+                                currentHaptic()
+                                currentOnPress()
+                            }
+                        } finally {
+                            job?.cancel()
+                            pressed = false
+                        }
+                    }
+                    return@pointerInput
+                }
                 awaitEachGesture {
                     awaitFirstDown()
                     pressed = true

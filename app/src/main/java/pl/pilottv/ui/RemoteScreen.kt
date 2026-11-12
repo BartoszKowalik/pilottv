@@ -227,8 +227,11 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
                         .padding(bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    DigitKeys(send)
-                    FunctionKeys(send)
+                    // Arkusz można przeciągać, więc komenda idzie po puszczeniu palca.
+                    CompositionLocalProvider(LocalPressOnRelease provides true) {
+                        DigitKeys(send)
+                        FunctionKeys(send)
+                    }
                 }
             }
         }
@@ -379,22 +382,25 @@ private fun ColumnScope.FullLayout(a: RemoteActions) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        TopKeys(a)
-        DigitKeys(a.send)
-        RockerRow(a) {
-            TextKey("CH LIST", { a.send(Key.CH_LIST) }, Modifier.width(96.dp), label = "Lista kanałów")
-            IconKey(Icons.Filled.Keyboard, "Wpisz tekst", a.openKeyboard, size = 52.dp)
-            IconKey(Icons.Filled.Mic, "Mikrofon", a.openMic, size = 52.dp)
+        // Ekran jest przewijany, więc komenda idzie po puszczeniu palca.
+        CompositionLocalProvider(LocalPressOnRelease provides true) {
+            TopKeys(a)
+            DigitKeys(a.send)
+            RockerRow(a) {
+                TextKey("CH LIST", { a.send(Key.CH_LIST) }, Modifier.width(96.dp), label = "Lista kanałów")
+                IconKey(Icons.Filled.Keyboard, "Wpisz tekst", a.openKeyboard, size = 52.dp)
+                IconKey(Icons.Filled.Mic, "Mikrofon", a.openMic, size = 52.dp)
+            }
+            ShortcutRow(a)
+            if (a.touchpad) {
+                TouchPad(a.send, Modifier.fillMaxWidth().height(260.dp))
+            } else {
+                DPad(a.send, Modifier.widthIn(max = 280.dp).fillMaxWidth())
+            }
+            NavKeys(a)
+            FunctionKeys(a.send)
+            MediaKeys(a)
         }
-        ShortcutRow(a)
-        if (a.touchpad) {
-            TouchPad(a.send, Modifier.fillMaxWidth().height(260.dp))
-        } else {
-            DPad(a.send, Modifier.widthIn(max = 280.dp).fillMaxWidth())
-        }
-        NavKeys(a)
-        FunctionKeys(a.send)
-        MediaKeys(a)
     }
 }
 
