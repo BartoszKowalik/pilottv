@@ -30,4 +30,25 @@ class WakeOnLanTest {
         assertNull(WakeOnLan.normalizeMac("GG:BB:CC:DD:EE:FF"))
         assertNull(WakeOnLan.normalizeMac("AA:BB:CC:DD:EE:ZZ"))
     }
+
+    @Test
+    fun partLongerThanTwoDigits() {
+        assertNull(WakeOnLan.normalizeMac("1FF:BB:CC:DD:EE:FF"))
+        assertNull(WakeOnLan.normalizeMac("AA:BB:CC:DD:EE:0FF"))
+    }
+
+    @Test
+    fun signIsRejected() {
+        assertNull(WakeOnLan.normalizeMac("+A:BB:CC:DD:EE:FF"))
+        assertNull(WakeOnLan.normalizeMac("AA:BB:CC:DD:EE:+F"))
+    }
+
+    @Test
+    fun withoutSeparators() {
+        assertEquals("AA:BB:CC:DD:EE:FF", WakeOnLan.normalizeMac("AABBCCDDEEFF"))
+        assertEquals("01:23:45:67:89:AB", WakeOnLan.normalizeMac(" 0123456789ab "))
+        assertNull(WakeOnLan.normalizeMac("AABBCCDDEEF"))
+        assertNull(WakeOnLan.normalizeMac("AABBCCDDEEFF0"))
+        assertNull(WakeOnLan.normalizeMac("AABBCCDDEEGG"))
+    }
 }

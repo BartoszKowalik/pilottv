@@ -35,9 +35,18 @@ object WakeOnLan {
         }
     }
 
+    /** Przyjmuje "AA:BB:CC:DD:EE:FF", "AA-BB-CC-DD-EE-FF" i "AABBCCDDEEFF". */
     private fun parseMac(mac: String): ByteArray {
-        val parts = mac.trim().split(':', '-').filter { it.isNotEmpty() }
-        require(parts.size == 6) { "Niepoprawny MAC" }
+        val text = mac.trim()
+        val parts = if (text.length == 12 && text.all { isHexDigit(it) }) {
+            text.chunked(2)
+        } else {
+            text.split(':', '-').filter { it.isNotEmpty() }
+        }
+        // toInt(16) przyjmuje też znak "+" i dowolną długość, więc sprawdzamy każdą część.
+        require(parts.size == 6 && parts.all { part -> part.length in 1..2 && part.all { isHexDigit(it) } }) { "Niepoprawny MAC" }
         return ByteArray(6) { parts[it].toInt(16).toByte() }
     }
+
+    private fun isHexDigit(c: Char): Boolean = c in '0'..'9' || c in 'a'..'f' || c in 'A'..'F'
 }
