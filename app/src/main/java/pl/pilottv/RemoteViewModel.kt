@@ -400,6 +400,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             val info = SamsungDiscovery.fetchInfo(ip)
             if (info == null) toast("Nie odczytano danych TV. Zapisano tylko adres IP.")
             settings.saveTv(ip, info?.name, info?.mac?.let(WakeOnLan::normalizeMac), TvBrand.SAMSUNG)
+            settings.setTarget(Target.TV)
             restartTv()
         }
         return true
