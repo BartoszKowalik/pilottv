@@ -131,7 +131,10 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
             when (event) {
                 is ImeEvent.Opened -> {
                     showKeyboard = true
-                    event.text?.let { keyboardText = EditedText(it, fromUser = false) }
+                    // Nowe pole: brak tekstu z urządzenia oznacza puste pole (LG nie podaje tekstu).
+                    if (SystemClock.elapsedRealtime() - lastUserEdit > ECHO_GUARD_MS) {
+                        keyboardText = EditedText(event.text ?: "", fromUser = false)
+                    }
                 }
                 is ImeEvent.Updated -> {
                     // Nie nadpisujemy tekstu, który użytkownik właśnie wpisuje.
@@ -248,6 +251,8 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
                     onSubmit = {
                         if (keyboardText.fromUser) vm.sendText(keyboardText.value)
                         vm.endInput()
+                        // Nowa wartość anuluje opóźnione wysłanie, więc tekst nie idzie drugi raz.
+                        keyboardText = EditedText("", fromUser = false)
                         showKeyboard = false
                     },
                 )
