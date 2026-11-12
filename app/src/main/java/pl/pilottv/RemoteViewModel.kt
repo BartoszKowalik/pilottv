@@ -144,7 +144,9 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     private var started = false
     private var tvJob: Job? = null
     private var atvJob: Job? = null
-    private var fastRetryUntil = 0L
+    // Po Wake-on-LAN szybko ponawiamy połączenie tylko z budzonym urządzeniem.
+    private var tvFastRetryUntil = 0L
+    private var atvFastRetryUntil = 0L
 
     fun onStart() {
         started = true
@@ -172,6 +174,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         if (!started) return
         tvJob = connectionLoop(
             config = { settings.tvConfig.first() },
+            fastRetryUntil = { tvFastRetryUntil },
             idle = {
                 samsung.markIdle()
                 lg.markIdle()
@@ -190,6 +193,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         if (!started) return
         atvJob = connectionLoop(
             config = { settings.atvConfig.first() },
+            fastRetryUntil = { atvFastRetryUntil },
             idle = atv::markIdle,
         ) { cfg ->
             atv.session(cfg) { pin -> viewModelScope.launch { settings.saveAtvPin(pin) } }
@@ -199,6 +203,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     /** Łączy, a po zerwaniu próbuje ponownie z rosnącym odstępem. */
     private fun <C : Any> connectionLoop(
         config: suspend () -> C?,
+        fastRetryUntil: () -> Long,
         idle: () -> Unit,
         session: suspend (C) -> SessionResult,
     ): Job = viewModelScope.launch {
@@ -221,7 +226,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             // Te przypadki wymagają decyzji użytkownika, więc nie ponawiamy.
             if (result.end in STOP_ENDS) return@launch
             if (result.wasConnected) backoff = MIN_BACKOFF_MS
-            val fastRetry = SystemClock.elapsedRealtime() < fastRetryUntil
+            val fastRetry = SystemClock.elapsedRealtime() < fastRetryUntil()
             delay(if (fastRetry) MIN_BACKOFF_MS else backoff)
             backoff = (backoff * 2).coerceAtMost(MAX_BACKOFF_MS)
         }
@@ -327,7 +332,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                 toast("Dekoder nie odpowiada. Aby go włączyć, wpisz MAC dekodera w ustawieniach.")
                 return
             }
-            wake(mac, "Włączam dekoder…", ::restartAtv)
+            wake(Target.DECODER, mac, "Włączam dekoder…")
             return
         }
         if (tvState.value == TvState.Connected) {
@@ -339,10 +344,10 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             toast("Brak adresu MAC. Nie można włączyć TV. Uzupełnij MAC w ustawieniach.")
             return
         }
-        wake(mac, "Włączam TV…", ::restartTv)
+        wake(Target.TV, mac, "Włączam TV…")
     }
 
-    private fun wake(mac: String, message: String, reconnect: () -> Unit) {
+    private fun wake(device: Target, mac: String, message: String) {
         if (noLocalNetwork()) return
         viewModelScope.launch {
             runCatching { WakeOnLan.send(mac, NetUtils.broadcastAddress(getApplication())) }
@@ -351,8 +356,17 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                     return@launch
                 }
             toast(message)
-            fastRetryUntil = SystemClock.elapsedRealtime() + WAKE_RETRY_WINDOW_MS
-            reconnect()
+            val until = SystemClock.elapsedRealtime() + WAKE_RETRY_WINDOW_MS
+            when (device) {
+                Target.TV -> {
+                    tvFastRetryUntil = until
+                    restartTv()
+                }
+                Target.DECODER -> {
+                    atvFastRetryUntil = until
+                    restartAtv()
+                }
+            }
         }
     }
 
