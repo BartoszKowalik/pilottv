@@ -82,7 +82,10 @@ class LgRemote(private val clientName: String) : TvClient {
         _state.value = TvState.Connecting
         val secure = attempt(id, config, secure = true, onUpdate)
         // Port 3001 zamknięty: starszy TV, próbujemy bez szyfrowania.
-        val result = if (!secure.opened && secure.result.end == SessionEnd.UNREACHABLE && activeId == id) {
+        // Przypięty certyfikat oznacza, że TV obsługuje wss://. Wtedy zablokowany port 3001
+        // nie może wymusić połączenia bez szyfrowania.
+        val fallback = config.certPin == null && !secure.opened && secure.result.end == SessionEnd.UNREACHABLE
+        val result = if (fallback && activeId == id) {
             attempt(id, config, secure = false, onUpdate).result
         } else {
             secure.result
