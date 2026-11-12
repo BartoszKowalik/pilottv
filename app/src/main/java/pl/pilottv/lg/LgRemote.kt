@@ -41,6 +41,8 @@ class LgRemote(private val clientName: String) : TvClient {
     private val baseClient = OkHttpClient.Builder()
         .connectTimeout(4, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
+        // Brak odpowiedzi na ping kończy sesję. Tak wykrywamy TV, który zniknął z sieci bez zamknięcia gniazda.
+        .pingInterval(10, TimeUnit.SECONDS)
         .build()
 
     private val _state = MutableStateFlow<TvState>(TvState.Idle)
