@@ -21,26 +21,16 @@ import pl.pilottv.net.TofuTrustManager
 import pl.pilottv.net.hasCause
 import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
+import pl.pilottv.remote.SessionEnd
+import pl.pilottv.remote.SessionResult
 import pl.pilottv.remote.TvClient
+import pl.pilottv.remote.TvState
 import pl.pilottv.remote.TvUpdate
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
-
-sealed interface TvState {
-    data object Idle : TvState
-    data object Connecting : TvState
-    data object AwaitingApproval : TvState
-    data object Connected : TvState
-    data class Failed(val reason: SessionEnd) : TvState
-}
-
-/** Stan i wynik sesji są wspólne dla Samsunga i dekodera Android TV. */
-enum class SessionEnd { CLOSED, UNREACHABLE, TIMEOUT, DENIED, CERT_CHANGED, NOT_PAIRED, BAD_ADDRESS }
-
-data class SessionResult(val end: SessionEnd, val wasConnected: Boolean)
 
 /**
  * Klient WebSocket dla Samsung Tizen (2016+), port 8002 (wss).

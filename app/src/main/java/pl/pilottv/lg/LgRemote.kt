@@ -20,12 +20,12 @@ import pl.pilottv.net.TofuTrustManager
 import pl.pilottv.net.hasCause
 import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
+import pl.pilottv.remote.SessionEnd
+import pl.pilottv.remote.SessionResult
 import pl.pilottv.remote.TvClient
+import pl.pilottv.remote.TvState
 import pl.pilottv.remote.TvUpdate
 import pl.pilottv.remote.textEdit
-import pl.pilottv.samsung.SessionEnd
-import pl.pilottv.samsung.SessionResult
-import pl.pilottv.samsung.TvState
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger

@@ -89,10 +89,10 @@ import kotlinx.coroutines.delay
 import pl.pilottv.remote.AppShortcut
 import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
+import pl.pilottv.remote.SessionEnd
 import pl.pilottv.remote.Target
+import pl.pilottv.remote.TvState
 import pl.pilottv.resolveTarget
-import pl.pilottv.samsung.SessionEnd
-import pl.pilottv.samsung.TvState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -3,8 +3,6 @@ package pl.pilottv.remote
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import pl.pilottv.data.TvConfig
-import pl.pilottv.samsung.SessionResult
-import pl.pilottv.samsung.TvState
 
 /** Dane do zapisania po połączeniu z TV. Null = bez zmian. */
 data class TvUpdate(

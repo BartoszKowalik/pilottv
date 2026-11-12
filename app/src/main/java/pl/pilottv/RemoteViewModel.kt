@@ -41,13 +41,13 @@ import pl.pilottv.net.parseIpv4
 import pl.pilottv.remote.AppShortcut
 import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
+import pl.pilottv.remote.SessionEnd
+import pl.pilottv.remote.SessionResult
 import pl.pilottv.remote.Target
+import pl.pilottv.remote.TvState
 import pl.pilottv.samsung.FoundTv
 import pl.pilottv.samsung.SamsungDiscovery
 import pl.pilottv.samsung.SamsungRemote
-import pl.pilottv.samsung.SessionEnd
-import pl.pilottv.samsung.SessionResult
-import pl.pilottv.samsung.TvState
 
 /** [loaded] = false, dopóki DataStore nie odczyta ustawień (unikamy mignięcia ekranu konfiguracji). */
 data class ConfigState(val loaded: Boolean, val tv: TvConfig?, val atv: AtvConfig?) {
