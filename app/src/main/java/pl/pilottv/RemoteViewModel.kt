@@ -343,6 +343,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun wake(mac: String, message: String, reconnect: () -> Unit) {
+        if (noLocalNetwork()) return
         viewModelScope.launch {
             runCatching { WakeOnLan.send(mac, NetUtils.broadcastAddress(getApplication())) }
                 .onFailure {
@@ -357,8 +358,16 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     // --- Samsung: konfiguracja ---
 
+    /** Skan i Wake-on-LAN mają sens tylko w sieci lokalnej. Bez niej pokazuje komunikat. */
+    private fun noLocalNetwork(): Boolean {
+        if (NetUtils.localIpv4(getApplication()) != null) return false
+        toast("Telefon nie jest w sieci Wi-Fi.")
+        return true
+    }
+
     fun scan() {
         if (_scanning.value) return
+        if (noLocalNetwork()) return
         viewModelScope.launch {
             _scanning.value = true
             val result = runCatching { SamsungDiscovery.scan(getApplication()) }.getOrDefault(emptyList())
@@ -398,6 +407,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun scanLg() {
         if (_scanningLg.value) return
+        if (noLocalNetwork()) return
         viewModelScope.launch {
             _scanningLg.value = true
             val result = runCatching {
@@ -449,6 +459,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     fun scanAtv() {
         if (_scanningAtv.value) return
+        if (noLocalNetwork()) return
         viewModelScope.launch {
             _scanningAtv.value = true
             val result = runCatching {

@@ -3,6 +3,7 @@ package pl.pilottv.net
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.LinkAddress
+import android.net.NetworkCapabilities
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -17,11 +18,23 @@ import java.nio.ByteBuffer
 
 object NetUtils {
 
-    /** Adres IPv4 telefonu w aktywnej sieci (zwykle Wi-Fi). */
+    /**
+     * Adres IPv4 telefonu w sieci lokalnej (Wi-Fi albo Ethernet, bez VPN).
+     * Null, gdy telefon nie ma takiej sieci. Aktywna sieć może być komórkowa, więc jej nie bierzemy.
+     */
+    @Suppress("DEPRECATION")
     fun localIpv4(context: Context): LinkAddress? {
         val cm = context.getSystemService(ConnectivityManager::class.java) ?: return null
-        val props = cm.getLinkProperties(cm.activeNetwork) ?: return null
-        return props.linkAddresses.firstOrNull { it.address is Inet4Address && !it.address.isLoopbackAddress }
+        for (network in cm.allNetworks) {
+            val caps = cm.getNetworkCapabilities(network) ?: continue
+            val local = caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
+            if (!local || caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) continue
+            val props = cm.getLinkProperties(network) ?: continue
+            val address = props.linkAddresses.firstOrNull { it.address is Inet4Address && !it.address.isLoopbackAddress }
+            if (address != null) return address
+        }
+        return null
     }
 
     /** Pierwsze trzy oktety adresu, np. "192.168.1". Skanujemy zawsze /24. */
