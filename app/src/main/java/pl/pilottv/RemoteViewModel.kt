@@ -490,9 +490,12 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                 _pairing.value = PairingUi.EnterCode(name ?: ip)
             } catch (e: Exception) {
                 session.close()
-                if (pairingSession === session) pairingSession = null
-                _pairing.value = PairingUi.Idle
-                toast("Nie udało się połączyć z dekoderem.")
+                // Po „Anuluj” sesja jest już inna (albo null). Wtedy błąd zamknięcia nie jest dla użytkownika.
+                if (pairingSession === session) {
+                    pairingSession = null
+                    _pairing.value = PairingUi.Idle
+                    toast("Nie udało się połączyć z dekoderem.")
+                }
             }
         }
     }
@@ -514,12 +517,16 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                 toast("Sparowano dekoder.")
                 restartAtv()
             } catch (e: WrongCodeException) {
-                _pairing.value = PairingUi.EnterCode(displayName, "Błędny kod. Sprawdź kod na ekranie i spróbuj ponownie.")
+                if (pairingSession === session) {
+                    _pairing.value = PairingUi.EnterCode(displayName, "Błędny kod. Sprawdź kod na ekranie i spróbuj ponownie.")
+                }
             } catch (e: Exception) {
                 session.close()
-                pairingSession = null
-                _pairing.value = PairingUi.Idle
-                toast("Parowanie nie powiodło się. Spróbuj ponownie.")
+                if (pairingSession === session) {
+                    pairingSession = null
+                    _pairing.value = PairingUi.Idle
+                    toast("Parowanie nie powiodło się. Spróbuj ponownie.")
+                }
             }
         }
     }
