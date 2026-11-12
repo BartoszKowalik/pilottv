@@ -532,6 +532,7 @@ private fun statusText(state: TvState): String = when (state) {
         SessionEnd.DENIED -> "TV odrzucił połączenie."
         SessionEnd.CERT_CHANGED -> "Certyfikat się zmienił."
         SessionEnd.NOT_PAIRED -> "Dekoder nie zna telefonu."
+        SessionEnd.BAD_ADDRESS -> "Zły adres IP. Popraw w ustawieniach."
     }
 }
 

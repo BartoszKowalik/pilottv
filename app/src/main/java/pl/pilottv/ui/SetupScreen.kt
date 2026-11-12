@@ -172,8 +172,7 @@ fun SetupScreen(vm: RemoteViewModel, onClose: (() -> Unit)?) {
         )
         Button(
             onClick = {
-                vm.selectManualIp(ipInput, manualBrand)
-                onClose?.invoke()
+                if (vm.selectManualIp(ipInput, manualBrand)) onClose?.invoke()
             },
             enabled = ipInput.isNotBlank(),
         ) { Text("Zapisz i połącz") }

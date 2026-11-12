@@ -106,6 +106,13 @@ class LgRemote(private val clientName: String) : TvClient {
             baseClient
         }
         val url = if (secure) "wss://${config.ip}:3001/" else "ws://${config.ip}:3000/"
+        // Adres zapisany przez starszą wersję może być niepoprawny. OkHttp odrzuca go wyjątkiem.
+        val request = try {
+            Request.Builder().url(url).build()
+        } catch (e: IllegalArgumentException) {
+            update(TvState.Failed(SessionEnd.BAD_ADDRESS))
+            return Attempt(SessionResult(SessionEnd.BAD_ADDRESS, false), opened = false)
+        }
 
         val done = CompletableDeferred<SessionResult>()
         val opened = AtomicBoolean(false)
@@ -175,7 +182,7 @@ class LgRemote(private val clientName: String) : TvClient {
             }
         }
 
-        val ws = client.newWebSocket(Request.Builder().url(url).build(), listener)
+        val ws = client.newWebSocket(request, listener)
         try {
             return Attempt(done.await(), opened.get())
         } finally {

@@ -38,7 +38,7 @@ sealed interface TvState {
 }
 
 /** Stan i wynik sesji są wspólne dla Samsunga i dekodera Android TV. */
-enum class SessionEnd { CLOSED, UNREACHABLE, TIMEOUT, DENIED, CERT_CHANGED, NOT_PAIRED }
+enum class SessionEnd { CLOSED, UNREACHABLE, TIMEOUT, DENIED, CERT_CHANGED, NOT_PAIRED, BAD_ADDRESS }
 
 data class SessionResult(val end: SessionEnd, val wasConnected: Boolean)
 
@@ -104,6 +104,13 @@ class SamsungRemote(clientName: String) : TvClient {
             append(":8002/api/v2/channels/samsung.remote.control?name=").append(nameParam)
             config.token?.let { append("&token=").append(it) }
         }
+        // Adres zapisany przez starszą wersję może być niepoprawny. OkHttp odrzuca go wyjątkiem.
+        val request = try {
+            Request.Builder().url(url).build()
+        } catch (e: IllegalArgumentException) {
+            update(TvState.Failed(SessionEnd.BAD_ADDRESS))
+            return SessionResult(SessionEnd.BAD_ADDRESS, false)
+        }
 
         val done = CompletableDeferred<SessionResult>()
         val connected = AtomicBoolean(false)
@@ -160,7 +167,7 @@ class SamsungRemote(clientName: String) : TvClient {
             }
         }
 
-        val ws = client.newWebSocket(Request.Builder().url(url).build(), listener)
+        val ws = client.newWebSocket(request, listener)
         try {
             val result = done.await()
             update(TvState.Failed(result.end))

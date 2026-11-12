@@ -6,6 +6,7 @@ import android.view.KeyEvent
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -36,6 +37,7 @@ import pl.pilottv.lg.LgRemote
 import pl.pilottv.remote.TvClient
 import pl.pilottv.net.NetUtils
 import pl.pilottv.net.WakeOnLan
+import pl.pilottv.net.parseIpv4
 import pl.pilottv.remote.AppShortcut
 import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
@@ -207,7 +209,15 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
                 idle()
                 return@launch
             }
-            val result = session(cfg)
+            // Siatka bezpieczeństwa: nieoczekiwany wyjątek klienta nie może zamknąć aplikacji.
+            val result = try {
+                session(cfg)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                idle()
+                SessionResult(SessionEnd.UNREACHABLE, false)
+            }
             // Te przypadki wymagają decyzji użytkownika, więc nie ponawiamy.
             if (result.end in STOP_ENDS) return@launch
             if (result.wasConnected) backoff = MIN_BACKOFF_MS
@@ -366,11 +376,16 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun selectManualIp(input: String, brand: TvBrand) {
-        val ip = input.trim()
+    /** Zwraca false, gdy adres jest niepoprawny. Wtedy nic nie zapisuje. */
+    fun selectManualIp(input: String, brand: TvBrand): Boolean {
+        val ip = parseIpv4(input)
+        if (ip == null) {
+            toast(BAD_IP_MESSAGE)
+            return false
+        }
         if (brand == TvBrand.LG) {
             selectLg(ip)
-            return
+            return true
         }
         viewModelScope.launch {
             val info = SamsungDiscovery.fetchInfo(ip)
@@ -378,6 +393,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
             settings.saveTv(ip, info?.name, info?.mac?.let(WakeOnLan::normalizeMac), TvBrand.SAMSUNG)
             restartTv()
         }
+        return true
     }
 
     fun scanLg() {
@@ -446,8 +462,11 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Krok 1: połączenie z dekoderem. Dekoder pokazuje kod na ekranie. */
     fun startAtvPairing(input: String) {
-        val ip = input.trim()
-        if (ip.isEmpty()) return
+        val ip = parseIpv4(input)
+        if (ip == null) {
+            toast(BAD_IP_MESSAGE)
+            return
+        }
         cancelPairing()
         _pairing.value = PairingUi.Connecting
         viewModelScope.launch {
@@ -562,6 +581,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
         const val MIN_BACKOFF_MS = 1_000L
         const val MAX_BACKOFF_MS = 15_000L
         const val WAKE_RETRY_WINDOW_MS = 30_000L
-        val STOP_ENDS = setOf(SessionEnd.DENIED, SessionEnd.CERT_CHANGED, SessionEnd.NOT_PAIRED)
+        const val BAD_IP_MESSAGE = "Niepoprawny adres IP. Przykład: 192.168.1.50"
+        val STOP_ENDS = setOf(SessionEnd.DENIED, SessionEnd.CERT_CHANGED, SessionEnd.NOT_PAIRED, SessionEnd.BAD_ADDRESS)
     }
 }
