@@ -112,7 +112,10 @@ object ProtoIo {
             length = length or ((b and 0x7F) shl shift)
             if (b and 0x80 == 0) break
             shift += 7
+            // Długość Int ma najwyżej 5 bajtów varint. Dłuższy zapis to uszkodzone dane.
+            if (shift >= 35) throw IOException("Za długi varint długości")
         }
+        if (length < 0) throw IOException("Ujemna długość ramki")
         if (length > MAX_FRAME) throw IOException("Za duża ramka")
         val buffer = ByteArray(length)
         DataInputStream(input).readFully(buffer)

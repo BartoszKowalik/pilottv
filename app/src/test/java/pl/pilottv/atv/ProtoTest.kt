@@ -86,4 +86,18 @@ class ProtoTest {
         // Varint długości urwany w środku.
         assertThrows(IOException::class.java) { ProtoIo.read(ByteArrayInputStream(byteArrayOf(0x80.toByte()))) }
     }
+
+    @Test
+    fun readRejectsTooLongLengthVarint() {
+        // 6 bajtów z bitem kontynuacji: więcej niż 5 bajtów varint.
+        val sixBytes = ByteArray(6) { 0x80.toByte() } + byteArrayOf(0x01)
+        assertThrows(IOException::class.java) { ProtoIo.read(ByteArrayInputStream(sixBytes)) }
+    }
+
+    @Test
+    fun readRejectsNegativeLength() {
+        // 0xFF 0xFF 0xFF 0xFF 0x0F = -1 jako Int.
+        val negative = byteArrayOf(0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0xFF.toByte(), 0x0F)
+        assertThrows(IOException::class.java) { ProtoIo.read(ByteArrayInputStream(negative)) }
+    }
 }
