@@ -22,6 +22,7 @@ import pl.pilottv.remote.ImeEvent
 import pl.pilottv.remote.Key
 import pl.pilottv.remote.TvClient
 import pl.pilottv.remote.TvUpdate
+import pl.pilottv.remote.textEdit
 import pl.pilottv.samsung.SessionEnd
 import pl.pilottv.samsung.SessionResult
 import pl.pilottv.samsung.TvState
@@ -228,14 +229,12 @@ class LgRemote(private val clientName: String) : TvClient {
 
     override fun sendText(text: String): Boolean {
         val ws = main ?: return false
-        val previous = sentText
-        val common = previous.commonPrefixWith(text).length
-        val toDelete = previous.length - common
-        if (toDelete > 0) {
+        val edit = textEdit(sentText, text)
+        if (edit.deleteChars > 0) {
             ws.send(request("req_${requestIds.incrementAndGet()}", "ssap://com.webos.service.ime/deleteCharacters",
-                JSONObject().put("count", toDelete)))
+                JSONObject().put("count", edit.deleteChars)))
         }
-        val toInsert = text.substring(common)
+        val toInsert = edit.insert
         if (toInsert.isNotEmpty()) {
             ws.send(request("req_${requestIds.incrementAndGet()}", "ssap://com.webos.service.ime/insertText",
                 JSONObject().put("text", toInsert).put("replace", 0)))

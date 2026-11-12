@@ -12,6 +12,7 @@ import pl.pilottv.net.PinMismatchException
 import pl.pilottv.net.TofuTrustManager
 import pl.pilottv.net.hasCause
 import pl.pilottv.remote.ImeEvent
+import pl.pilottv.remote.textEdit
 import pl.pilottv.samsung.SessionEnd
 import pl.pilottv.samsung.SessionResult
 import pl.pilottv.samsung.TvState
@@ -254,11 +255,9 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
      */
     fun sendText(text: String): Boolean {
         if (output == null) return false
-        val previous = fieldText
-        val common = previous.commonPrefixWith(text).length
-        val toDelete = previous.codePointCount(common, previous.length)
-        val toInsert = text.substring(common)
-        repeat(toDelete) { if (!sendKey(KEYCODE_DEL)) return false }
+        val edit = textEdit(fieldText, text)
+        val toInsert = edit.insert
+        repeat(edit.deleteCodePoints) { if (!sendKey(KEYCODE_DEL)) return false }
         if (toInsert.isNotEmpty()) {
             val sent = enqueue(proto {
                 message(IME_BATCH_EDIT) {
