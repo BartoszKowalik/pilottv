@@ -56,8 +56,9 @@ class ClientIdentity private constructor(
             if (keyFile.exists() && certFile.exists()) {
                 runCatching {
                     val key = KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes()))
-                    val cert = CertificateFactory.getInstance("X.509")
-                        .generateCertificate(certFile.inputStream()) as X509Certificate
+                    val cert = certFile.inputStream().use {
+                        CertificateFactory.getInstance("X.509").generateCertificate(it)
+                    } as X509Certificate
                     return ClientIdentity(key, cert)
                 }
             }
