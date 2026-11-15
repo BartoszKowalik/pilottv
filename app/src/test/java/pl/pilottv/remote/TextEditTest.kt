@@ -1,6 +1,8 @@
 package pl.pilottv.remote
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TextEditTest {
@@ -36,5 +38,24 @@ class TextEditTest {
         assertEquals(TextEdit(0, 0, "😀"), textEdit("a", "a😀"))
         // 😀 i 😃 mają ten sam pierwszy surogat. Pary nie można rozdzielić.
         assertEquals(TextEdit(2, 1, "😃"), textEdit("a😀", "a😃"))
+    }
+
+    @Test
+    fun pastedText() {
+        assertEquals("https://a.pl/x", cleanPastedText("  https://a.pl/x\n"))
+        assertEquals("ab cd", cleanPastedText("ab\r\ncd"))
+        assertEquals("a b", cleanPastedText("a\tb"))
+        assertEquals("", cleanPastedText("\n \n"))
+        assertTrue(hasLineBreaks("a\nb"))
+        assertFalse(hasLineBreaks("a b "))
+    }
+
+    @Test
+    fun recentTexts() {
+        assertEquals(listOf("a"), withRecentText(emptyList(), " a "))
+        // Powtórzony tekst idzie na początek, bez duplikatu.
+        assertEquals(listOf("b", "a", "c"), withRecentText(listOf("a", "b", "c"), "b"))
+        assertEquals(listOf("a"), withRecentText(listOf("a"), "  "))
+        assertEquals(listOf("x", "1", "2"), withRecentText(listOf("1", "2", "3"), "x", max = 3))
     }
 }

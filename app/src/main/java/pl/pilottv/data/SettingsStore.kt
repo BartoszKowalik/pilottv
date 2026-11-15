@@ -81,6 +81,7 @@ class SettingsStore(private val context: Context) {
         val ATV_CERT_PIN = stringPreferencesKey("atv_cert_pin")
         val ATV_MAC = stringPreferencesKey("atv_mac")
         val SHORTCUTS = stringPreferencesKey("shortcuts")
+        val RECENT_TEXTS = stringPreferencesKey("recent_texts")
     }
 
     val tvConfig: Flow<TvConfig?> = context.dataStore.data.map { p ->
@@ -165,6 +166,24 @@ class SettingsStore(private val context: Context) {
             AppShortcut(o.getString("name"), o.getString("app"))
         }
     }.getOrNull()
+
+    /** Ostatnie teksty zatwierdzone w arkuszu klawiatury, najnowszy pierwszy. */
+    val recentTexts: Flow<List<String>> = context.dataStore.data.map { p -> decodeTexts(p[Keys.RECENT_TEXTS]) }
+
+    /** Zmienia listę ostatnich tekstów w jednej transakcji (bez utraty zmian przy szybkich zapisach). */
+    suspend fun updateRecentTexts(change: (List<String>) -> List<String>) {
+        context.dataStore.edit { p ->
+            val next = change(decodeTexts(p[Keys.RECENT_TEXTS]))
+            if (next.isEmpty()) p.remove(Keys.RECENT_TEXTS) else p[Keys.RECENT_TEXTS] = JSONArray(next).toString()
+        }
+    }
+
+    private fun decodeTexts(json: String?): List<String> = json?.let {
+        runCatching {
+            val array = JSONArray(it)
+            (0 until array.length()).map { i -> array.getString(i) }
+        }.getOrNull()
+    } ?: emptyList()
 
     suspend fun setTarget(target: Target) {
         context.dataStore.edit { it[Keys.TARGET] = target.name }

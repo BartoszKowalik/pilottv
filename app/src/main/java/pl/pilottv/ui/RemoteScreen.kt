@@ -8,6 +8,7 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.Gamepad
@@ -56,6 +58,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
@@ -92,6 +95,8 @@ import pl.pilottv.remote.Key
 import pl.pilottv.remote.SessionEnd
 import pl.pilottv.remote.Target
 import pl.pilottv.remote.TvState
+import pl.pilottv.remote.cleanPastedText
+import pl.pilottv.remote.hasLineBreaks
 import pl.pilottv.resolveTarget
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -113,6 +118,7 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
     val haptic: () -> Unit = remember(haptics, hapticLevel) { { haptics.click(hapticLevel) } }
     val send: (Key) -> Unit = vm::send
     val shortcuts by vm.shortcuts.collectAsStateWithLifecycle()
+    val recentTexts by vm.recentTexts.collectAsStateWithLifecycle()
     val atvApp by vm.atvCurrentApp.collectAsStateWithLifecycle()
     val currentApp = if (target == Target.DECODER) atvApp else null
     var showMore by remember { mutableStateOf(false) }
@@ -121,7 +127,9 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
     var lastUserEdit by remember { mutableStateOf(0L) }
 
     fun editText(value: String) {
-        keyboardText = EditedText(value, fromUser = true)
+        // Wklejenie przez menu pola może wnieść nowe linie, których pole jednowierszowe na TV nie przyjmie.
+        val clean = if (hasLineBreaks(value)) cleanPastedText(value) else value
+        keyboardText = EditedText(clean, fromUser = true)
         lastUserEdit = SystemClock.elapsedRealtime()
     }
 
@@ -246,10 +254,13 @@ fun RemoteScreen(vm: RemoteViewModel, onOpenSettings: () -> Unit) {
             ) {
                 KeyboardSheet(
                     text = keyboardText.value,
+                    recent = recentTexts,
                     onTextChange = ::editText,
+                    onForget = vm::forgetText,
                     onMic = startSpeech,
                     onSubmit = {
                         if (keyboardText.fromUser) vm.sendText(keyboardText.value)
+                        vm.rememberText(keyboardText.value)
                         vm.endInput()
                         // Nowa wartość anuluje opóźnione wysłanie, więc tekst nie idzie drugi raz.
                         keyboardText = EditedText("", fromUser = false)
@@ -592,7 +603,9 @@ private fun FunctionKeys(send: (Key) -> Unit) {
 @Composable
 private fun KeyboardSheet(
     text: String,
+    recent: List<String>,
     onTextChange: (String) -> Unit,
+    onForget: (String) -> Unit,
     onMic: () -> Unit,
     onSubmit: () -> Unit,
 ) {
@@ -626,8 +639,41 @@ private fun KeyboardSheet(
                 .fillMaxWidth()
                 .focusRequester(focus),
         )
+        if (recent.isNotEmpty()) {
+            // Ostatnie zatwierdzone teksty: stuknięcie wpisuje tekst, krzyżyk usuwa go z listy.
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                recent.forEach { item ->
+                    InputChip(
+                        selected = false,
+                        onClick = { onTextChange(item) },
+                        label = {
+                            Text(
+                                item,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = 220.dp),
+                            )
+                        },
+                        trailingIcon = {
+                            Icon(
+                                Icons.Filled.Close,
+                                contentDescription = "Usuń z ostatnich: $item",
+                                modifier = Modifier
+                                    .size(18.dp)
+                                    .clickable { onForget(item) },
+                            )
+                        },
+                    )
+                }
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { clipboard.getText()?.text?.let(onTextChange) }) { Text("Wklej") }
+            OutlinedButton(onClick = { clipboard.getText()?.text?.let { onTextChange(cleanPastedText(it)) } }) { Text("Wklej") }
             OutlinedButton(onClick = { onTextChange("") }, enabled = text.isNotEmpty()) { Text("Wyczyść") }
             Button(onClick = onSubmit) { Text("Zatwierdź") }
         }

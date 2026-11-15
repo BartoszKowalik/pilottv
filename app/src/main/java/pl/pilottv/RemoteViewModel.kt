@@ -2,7 +2,6 @@ package pl.pilottv
 
 import android.app.Application
 import android.os.SystemClock
-import android.view.KeyEvent
 import android.widget.Toast
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -45,6 +44,7 @@ import pl.pilottv.remote.SessionEnd
 import pl.pilottv.remote.SessionResult
 import pl.pilottv.remote.Target
 import pl.pilottv.remote.TvState
+import pl.pilottv.remote.withRecentText
 import pl.pilottv.samsung.FoundTv
 import pl.pilottv.samsung.SamsungDiscovery
 import pl.pilottv.samsung.SamsungRemote
@@ -100,6 +100,18 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
 
     val shortcuts: StateFlow<List<AppShortcut>> = settings.shortcuts
         .stateIn(viewModelScope, SharingStarted.Eagerly, AppShortcut.DEFAULTS)
+
+    /** Ostatnie teksty z arkusza klawiatury (adresy, kody), najnowszy pierwszy. */
+    val recentTexts: StateFlow<List<String>> = settings.recentTexts
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    fun rememberText(text: String) {
+        viewModelScope.launch { settings.updateRecentTexts { withRecentText(it, text) } }
+    }
+
+    fun forgetText(text: String) {
+        viewModelScope.launch { settings.updateRecentTexts { list -> list - text } }
+    }
 
     val config: StateFlow<ConfigState> = combine(settings.tvConfig, settings.atvConfig) { tv, atvCfg ->
         ConfigState(loaded = true, tv = tv, atv = atvCfg)
@@ -307,7 +319,7 @@ class RemoteViewModel(app: Application) : AndroidViewModel(app) {
     fun endInput() {
         when (activeTarget()) {
             Target.TV -> tvClient().endInput()
-            Target.DECODER -> atv.sendKey(KeyEvent.KEYCODE_ENTER)
+            Target.DECODER -> atv.submitText()
         }
     }
 

@@ -21,6 +21,7 @@ import java.io.OutputStream
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
 import javax.net.ssl.SSLException
@@ -68,13 +69,17 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
     private val writeLock = Any()
 
     // Zapis do gniazda nie może iść z wątku UI.
-    private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "atv-writer").apply { isDaemon = true } }
+    private val writer = Executors.newSingleThreadScheduledExecutor { r -> Thread(r, "atv-writer").apply { isDaemon = true } }
 
     @Volatile
     private var imeCounter = 0
 
     @Volatile
     private var imeFieldCounter = 0
+
+    /** Liczniki przyszły z IME_KEY_INJECT lub IME_SHOW_REQUEST (pewne źródło w tej sesji). */
+    @Volatile
+    private var countersFromField = false
 
     /**
      * Tekst w polu na dekoderze, tak jak go znamy. Dekoder dopisuje tekst z IME_BATCH_EDIT
@@ -85,6 +90,23 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
 
     @Volatile
     private var lastTextSentAt = 0L
+
+    /*
+     * Po każdej zmianie w polu dekoder zmienia licznik pola (IME_SHOW_REQUEST) i odrzuca wstawienie
+     * ze starym licznikiem. Dlatego następne wstawienie czeka, aż kursor dojdzie do [expectedCursor]
+     * (wszystkie wysłane zmiany są wykonane), najpóźniej PENDING_TIMEOUT_MS.
+     * Pola chroni [pendingLock].
+     */
+    private val pendingLock = Any()
+
+    /** Pozycja kursora po wykonaniu wszystkich wysłanych zmian. null = nic nie czeka na potwierdzenie. */
+    private var expectedCursor: Int? = null
+    private var pendingInsert: String? = null
+    private var enterAfterInsert = false
+    private var pendingId = 0
+
+    /** Czas ostatniego potwierdzenia zmiany (IME_SHOW_REQUEST) lub wysłania tekstu. */
+    private var lastProgressAt = 0L
 
     fun markIdle() {
         activeId = sessionIds.incrementAndGet()
@@ -102,6 +124,8 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
         }
         update(TvState.Connecting)
         fieldText = ""
+        countersFromField = false
+        synchronized(pendingLock) { clearPending() }
 
         return suspendCancellableCoroutine { cont ->
             val socketRef = AtomicReference<Socket?>()
@@ -182,8 +206,12 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
             msg.has(IME_BATCH_EDIT) -> {
                 val edit = msg.message(IME_BATCH_EDIT)
                 if (edit != null) {
-                    imeCounter = edit.int(1)?.toInt() ?: imeCounter
-                    imeFieldCounter = edit.int(2)?.toInt() ?: imeFieldCounter
+                    // Dekoder Canal+ wysyła tu stałe liczniki (1, 0) i odrzuca zmiany z nimi.
+                    // Prawidłowe liczniki są w IME_KEY_INJECT i IME_SHOW_REQUEST, więc te tylko jako zapas.
+                    if (!countersFromField) {
+                        imeCounter = edit.int(1)?.toInt() ?: imeCounter
+                        imeFieldCounter = edit.int(2)?.toInt() ?: imeFieldCounter
+                    }
                     // edit_info(3) → text_field_status(2) → value(3)
                     val text = runCatching { edit.message(3)?.message(2)?.string(3) }.getOrNull()
                     if (text != null) {
@@ -194,23 +222,54 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
                 }
             }
             msg.has(IME_KEY_INJECT) -> {
+                val inject = runCatching { msg.message(IME_KEY_INJECT) }.getOrNull()
+                // app_info(1) → counter(1): licznik IME. text_field_status(2) → counter_field(1): licznik pola.
+                // Dekoder przyjmuje IME_BATCH_EDIT tylko z tymi wartościami („Ignoring edit” w logach).
+                runCatching { inject?.message(1)?.int(1) }.getOrNull()?.let {
+                    imeCounter = it.toInt()
+                    countersFromField = true
+                }
+                runCatching { inject?.message(2)?.int(1) }.getOrNull()?.let {
+                    imeFieldCounter = it.toInt()
+                    countersFromField = true
+                    // Nowe pole: czekające zmiany dotyczyły poprzedniego.
+                    synchronized(pendingLock) { clearPending() }
+                }
                 // app_info(1) → app_package(12): aplikacja na pierwszym planie.
-                val pkg = runCatching { msg.message(IME_KEY_INJECT)?.message(1)?.string(12) }.getOrNull()
+                val pkg = runCatching { inject?.message(1)?.string(12) }.getOrNull()
                 if (pkg != null) {
                     _currentApp.value = pkg.ifEmpty { null }
                     // Aplikacja się zmieniła, więc wysłany link zadziałał.
                     lastLink = null
                 }
                 // text_field_status(2) → value(2): zawartość pola po przejściu do niego.
-                val text = runCatching { msg.message(IME_KEY_INJECT)?.message(2)?.string(2) }.getOrNull()
+                val text = runCatching { inject?.message(2)?.string(2) }.getOrNull()
                 if (text != null) {
                     fieldText = text
                     _ime.tryEmit(ImeEvent.Updated(text))
                 }
             }
             msg.has(IME_SHOW_REQUEST) -> {
-                val text = runCatching { msg.message(IME_SHOW_REQUEST)?.message(2)?.string(2) }.getOrNull()
-                fieldText = text ?: ""
+                // Dekoder wysyła to po otwarciu pola i po każdej zmianie tekstu (też naszej).
+                // text_field_status(2) → counter_field(1): nowy licznik pola po każdej zmianie.
+                val status = runCatching { msg.message(IME_SHOW_REQUEST)?.message(2) }.getOrNull()
+                runCatching { status?.int(1) }.getOrNull()?.let {
+                    imeFieldCounter = it.toInt()
+                    countersFromField = true
+                }
+                // start(3): pozycja kursora. Gdy wysłane zmiany są wykonane, wysyłamy czekające wstawienie.
+                runCatching { status?.int(3) }.getOrNull()?.let { cursor ->
+                    synchronized(pendingLock) {
+                        lastProgressAt = System.currentTimeMillis()
+                        if (expectedCursor == cursor.toInt()) {
+                            expectedCursor = null
+                            flushPending()
+                        }
+                    }
+                }
+                val text = runCatching { status?.string(2) }.getOrNull()
+                // Stan po naszej starszej zmianie mógłby nadpisać nowszy tekst i zdublować znaki.
+                if (System.currentTimeMillis() - lastTextSentAt > ECHO_GUARD_MS) fieldText = text ?: ""
                 _ime.tryEmit(ImeEvent.Opened(text))
             }
         }
@@ -255,29 +314,93 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
      */
     fun sendText(text: String): Boolean {
         if (output == null) return false
-        val edit = textEdit(fieldText, text)
-        val toInsert = edit.insert
-        repeat(edit.deleteCodePoints) { if (!sendKey(KEYCODE_DEL)) return false }
-        if (toInsert.isNotEmpty()) {
-            val sent = enqueue(proto {
-                message(IME_BATCH_EDIT) {
-                    int(1, imeCounter)
-                    int(2, imeFieldCounter)
-                    message(3) {
-                        int(1, 1)
-                        message(2) {
-                            int(1, toInsert.length - 1)
-                            int(2, toInsert.length - 1)
-                            string(3, toInsert)
-                        }
+        synchronized(pendingLock) {
+            // Czekające wstawienie jest na końcu fieldText i jeszcze nie trafiło do pola, więc liczymy bez niego.
+            val base = pendingInsert?.let { fieldText.dropLast(it.length) } ?: fieldText
+            pendingInsert = null
+            val edit = textEdit(base, text)
+            repeat(edit.deleteCodePoints) { if (!sendKey(KEYCODE_DEL)) return false }
+            if (edit.deleteCodePoints > 0) expectedCursor = text.length - edit.insert.length
+            fieldText = text
+            lastTextSentAt = System.currentTimeMillis()
+            if (edit.insert.isNotEmpty()) {
+                pendingInsert = edit.insert
+                if (expectedCursor == null) {
+                    flushPending()
+                } else {
+                    lastProgressAt = System.currentTimeMillis()
+                    schedulePendingTimeout()
+                }
+            }
+        }
+        return true
+    }
+
+    /**
+     * Gdy dekoder przez PENDING_TIMEOUT_MS nie potwierdza zmian (np. kursor przesunięty na TV),
+     * wysyłamy wstawienie z najnowszym licznikiem. Dłuższe kasowanie trwa, dopóki przychodzą potwierdzenia.
+     */
+    private fun schedulePendingTimeout() {
+        val id = ++pendingId
+        writer.schedule(Runnable {
+            synchronized(pendingLock) {
+                if (pendingId == id && pendingInsert != null) {
+                    if (System.currentTimeMillis() - lastProgressAt < PENDING_TIMEOUT_MS) {
+                        schedulePendingTimeout()
+                    } else {
+                        expectedCursor = null
+                        flushPending()
                     }
                 }
-            })
-            if (!sent) return false
+            }
+        }, PENDING_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+    }
+
+    /** Zatwierdza tekst (Enter). Gdy wstawienie czeka na potwierdzenie, Enter idzie po nim. */
+    fun submitText(): Boolean = synchronized(pendingLock) {
+        if (pendingInsert != null) {
+            enterAfterInsert = true
+            true
+        } else {
+            sendKey(KEYCODE_ENTER)
         }
-        fieldText = text
+    }
+
+    /** Wywołanie tylko pod [pendingLock]. */
+    private fun flushPending() {
+        val insert = pendingInsert ?: return
+        pendingInsert = null
+        enqueue(insertMessage(insert))
+        expectedCursor = fieldText.length
         lastTextSentAt = System.currentTimeMillis()
-        return true
+        if (enterAfterInsert) {
+            enterAfterInsert = false
+            sendKey(KEYCODE_ENTER)
+        }
+    }
+
+    /** Wywołanie tylko pod [pendingLock]. */
+    private fun clearPending() {
+        pendingInsert = null
+        expectedCursor = null
+        enterAfterInsert = false
+        pendingId++
+    }
+
+    /** Wstawienie tekstu w miejscu kursora. Liczniki muszą być aktualne w chwili budowy wiadomości. */
+    private fun insertMessage(insert: String): ByteArray = proto {
+        message(IME_BATCH_EDIT) {
+            int(1, imeCounter)
+            int(2, imeFieldCounter)
+            message(3) {
+                int(1, 1)
+                message(2) {
+                    int(1, insert.length - 1)
+                    int(2, insert.length - 1)
+                    string(3, insert)
+                }
+            }
+        }
     }
 
     companion object {
@@ -306,6 +429,8 @@ class AtvRemote(private val identity: () -> ClientIdentity, private val clientNa
 
         const val DIRECTION_SHORT = 3
         const val KEYCODE_DEL = 67
+        const val KEYCODE_ENTER = 66
         const val ECHO_GUARD_MS = 1_500L
+        const val PENDING_TIMEOUT_MS = 1_000L
     }
 }
